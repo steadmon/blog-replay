@@ -41,6 +41,21 @@ struct Blog {
     pages: ItemSummary,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+struct Post {
+    id: String,
+    url: String,
+    title: String,
+    content: String,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ListPostsResponse {
+    next_page_token: String,
+    items: Vec<Post>,
+}
+
 async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Blog, Box<dyn Error>>
 {
     let resp = client.get(Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?)
@@ -53,6 +68,25 @@ async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Bl
     }
 
     Ok(serde_json::from_str(&resp.text().await?)?)
+}
+
+async fn get_posts(config: &Config, client: &Client, blog: &Blog) -> Result<(), Box<dyn Error>> {
+    let resp = client.get(
+        Url::parse(&format!("https://www.googleapis.com/blogger/v3/blogs/{}/posts", blog.id))?
+    ).query(&[("key", &config.blogger_api_key), ("orderBy", &String::from("published"))])
+        .send()
+        .await?;
+
+    if resp.status() != 200 {
+        return Err(Box::new(ReplayError { msg: "failed request".to_string() }));
+    }
+
+    let post_resp: ListPostsResponse = serde_json::from_str(&resp.text().await?)?;
+    println!();
+    for item in &post_resp.items {
+        println!("{}", item.title);
+    }
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -88,6 +122,6 @@ async fn main() {
 
         let blog = get_blog(&config, &client, scrape_matches.value_of("URL").unwrap())
             .await.unwrap();
-        println!(blog.id);
+        get_posts(&config, &client, &blog).await.unwrap();
     }
 }
