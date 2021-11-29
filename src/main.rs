@@ -1,12 +1,13 @@
 use std::error::Error;
 use std::fmt::Display;
 
+use clap::clap_app;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
-static USER_AGENT: &str = concat!(
-    env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
+static VERSION: &str = env!("CARGO_PKG_VERSION");
+static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
 #[derive(Debug)]
 struct ReplayError {
@@ -67,15 +68,26 @@ impl std::default::Default for Config {
 
 #[tokio::main]
 async fn main() {
+    let matches = clap_app!((PROG_NAME) =>
+        (version: VERSION)
+        (author: "Joshua Steadmon <josh@steadmon.net>")
+        (about: "Replays blog archives into an RSS feed")
+        (@subcommand scrape =>
+            (about: "loads a blog's archive into the local DB for later replay")
+            (@arg URL: +required "URL of the blog to scrape")
+        )
+    ).get_matches();
+
     let config: Config = confy::load(PROG_NAME).unwrap();
 
-    let client = reqwest::ClientBuilder::new()
-        .user_agent(USER_AGENT)
-        .build()
-        .unwrap();
+    if let Some(scrape_matches) = matches.subcommand_matches("scrape") {
+        let client = reqwest::ClientBuilder::new()
+            .user_agent(USER_AGENT)
+            .build()
+            .unwrap();
 
-    // init(&config).unwrap();
-    let blog = get_blog(&config, &client, "https://monstersandmanuals.blogspot.com")
-        .await.unwrap();
-    println!(blog.id);
+        let blog = get_blog(&config, &client, scrape_matches.value_of("URL").unwrap())
+            .await.unwrap();
+        println!(blog.id);
+    }
 }
