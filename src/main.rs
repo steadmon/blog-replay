@@ -1,9 +1,8 @@
 use std::error::Error;
 use std::fmt::Display;
 
-use serde::{Deserialize, Serialize};
 use reqwest::{Client, Url};
-use tokio;
+use serde::{Deserialize, Serialize};
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static USER_AGENT: &str = concat!(
