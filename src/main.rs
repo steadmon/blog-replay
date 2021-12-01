@@ -68,7 +68,7 @@ async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Bl
         return Err(Box::new(ReplayError { msg: "failed request".to_string() }));
     }
 
-    Ok(serde_json::from_str(&resp.text().await?)?)
+    Ok(resp.json().await?)
 }
 
 async fn get_posts(config: &Config, client: &Client, blog: &Blog, delay: u8)
@@ -102,7 +102,7 @@ async fn get_posts(config: &Config, client: &Client, blog: &Blog, delay: u8)
             }));
         }
 
-        let mut post_resp: ListPostsResponse = serde_json::from_str(&resp.text().await?)?;
+        let mut post_resp: ListPostsResponse = resp.json().await?;
         page_count += 1;
         println!("Page {}", page_count);
         println!("=======");
