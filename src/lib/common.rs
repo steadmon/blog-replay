@@ -1,5 +1,7 @@
+use std::default::Default;
 use std::error::Error;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
+use std::fmt::Result as FmtResult;
 
 use serde::{Serialize, Deserialize};
 
@@ -8,7 +10,7 @@ pub struct Config {
     pub blogger_api_key: String,
 }
 
-impl std::default::Default for Config {
+impl Default for Config {
     fn default() -> Self {
         Self { blogger_api_key: "".to_string() }
     }
@@ -20,7 +22,7 @@ pub struct ReplayError {
 }
 
 impl Display for ReplayError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> FmtResult {
         write!(f, "ReplayError: {}", self.msg)
     }
 }
