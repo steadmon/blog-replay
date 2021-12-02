@@ -7,7 +7,7 @@ use tokio::time::{sleep, Duration};
 use super::common::{Config, ReplayError};
 
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Blog {
+struct Blog {
     id: String,
     name: String,
     description: String,
@@ -38,7 +38,7 @@ struct ListPostsResponse {
     items: Vec<Post>,
 }
 
-pub async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Blog, Box<dyn Error>>
+async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Blog, Box<dyn Error>>
 {
     let resp = client.get(Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?)
         .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
@@ -52,9 +52,11 @@ pub async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Resul
     Ok(resp.json().await?)
 }
 
-pub async fn get_posts(config: &Config, client: &Client, blog: &Blog, delay: u8)
+pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: u8)
     -> Result<(), Box<dyn Error>>
 {
+    let blog = get_blog(config, client, blog_url).await.unwrap();
+
     let posts_api_url = Url::parse(&format!(
             "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
             blog.id))?;

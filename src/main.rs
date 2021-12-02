@@ -28,8 +28,7 @@ async fn main() {
             .build()
             .unwrap();
 
-        let blog = blogger::get_blog(&config, &client, scrape_matches.value_of("URL").unwrap())
-            .await.unwrap();
-        blogger::get_posts(&config, &client, &blog, 3).await.unwrap();
+        let url = scrape_matches.value_of("URL").unwrap();
+        blogger::get_posts(&config, &client, url, 3).await.unwrap();
     }
 }
