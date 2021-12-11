@@ -1,8 +1,10 @@
 use std::error::Error;
 
-use reqwest::{Client, Url};
+use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
 use tokio::time::{sleep, Duration};
+use tokio_retry::RetryIf;
+use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
 use super::common::{Config, ReplayError};
 
@@ -38,24 +40,70 @@ struct ListPostsResponse {
     items: Vec<Post>,
 }
 
-async fn get_blog(config: &Config, client: &Client, blog_url: &str) -> Result<Blog, Box<dyn Error>>
+fn check_ok_or_retryable(resp: &Response) -> Result<(), ReplayError> {
+    if resp.status().is_success() {
+        Ok(())
+    } else if resp.status().is_server_error() {
+        Err(ReplayError {
+            msg: format!("failed request, status {}", resp.status()),
+            retryable: true,
+        })
+    } else {
+        Err(ReplayError {
+            msg: format!("failed request, status {}", resp.status()),
+            retryable: false,
+        })
+    }
+}
+
+async fn get_blog_once(config: &Config, client: &Client, blog_url: &str)
+    -> Result<Blog, Box<dyn Error>>
 {
     let resp = client.get(Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?)
         .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
         .send()
         .await?;
 
-    if resp.status() != 200 {
-        return Err(Box::new(ReplayError { msg: "failed request".to_string() }));
-    }
+    check_ok_or_retryable(&resp)?;
+    Ok(resp.json().await?)
+}
 
+async fn get_page_once(
+    config: &Config, client: &Client, api_url: &Url, page_token: Option<&String>)
+    -> Result<ListPostsResponse, Box<dyn Error>>
+{
+    let req = client.get(api_url.clone())
+        .query(&[
+               ("key", &config.blogger_api_key),
+               ("orderBy", &String::from("published")),
+               ("fetchBodies", &String::from("false")),
+        ]);
+
+    let req = if let Some(token) = page_token {
+        req.query(&[("pageToken", token)])
+    } else {
+        req
+    };
+
+    let resp = req.send().await?;
+
+    check_ok_or_retryable(&resp)?;
     Ok(resp.json().await?)
 }
 
 pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: u8)
     -> Result<(), Box<dyn Error>>
 {
-    let blog = get_blog(config, client, blog_url).await.unwrap();
+    let blog = RetryIf::spawn(
+        ExponentialBackoff::from_millis(500)
+            .map(jitter)
+            .take(config.max_retries),
+        || get_blog_once(config, client, blog_url),
+        |e: &Box<dyn Error>| match e.downcast_ref::<ReplayError>() {
+            Some(re) => re.retryable,
+            _ => false
+        }
+    ).await?;
 
     let posts_api_url = Url::parse(&format!(
             "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
@@ -64,28 +112,17 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
     let mut page_count = 0;
     let mut next_page_token: Option<String> = None;
     loop {
-        let req = client.get(posts_api_url.clone())
-            .query(&[
-                   ("key", &config.blogger_api_key),
-                   ("orderBy", &String::from("published")),
-                   ("fetchBodies", &String::from("false")),
-            ]);
+        let mut post_resp = RetryIf::spawn(
+            ExponentialBackoff::from_millis(500)
+                .map(jitter)
+                .take(config.max_retries),
+            || get_page_once(config, client, &posts_api_url, next_page_token.as_ref()),
+            |e: &Box<dyn Error>| match e.downcast_ref::<ReplayError>() {
+                Some(re) => re.retryable,
+                _ => false
+            }
+        ).await?;
 
-        let req = if let Some(ref token) = next_page_token {
-            req.query(&[("pageToken", token)])
-        } else {
-            req
-        };
-
-        let resp = req.send().await?;
-
-        if resp.status() != 200 {
-            return Err(Box::new(ReplayError {
-                msg: format!("failed request, status {}", resp.status())
-            }));
-        }
-
-        let mut post_resp: ListPostsResponse = resp.json().await?;
         page_count += 1;
         println!("Page {}", page_count);
         println!("=======");
@@ -96,9 +133,6 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
 
         next_page_token = post_resp.next_page_token.take();
         if post_resp.items.len() < 1 || next_page_token.is_none() {
-            println!("Breaking loop");
-            println!("Last response had {} pages, token {:?}",
-                     post_resp.items.len(), next_page_token);
             break;
         }
 
@@ -109,4 +143,3 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
 
     Ok(())
 }
-

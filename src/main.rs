@@ -29,6 +29,6 @@ async fn main() {
             .unwrap();
 
         let url = scrape_matches.value_of("URL").unwrap();
-        blogger::get_posts(&config, &client, url, 3).await.unwrap();
+        blogger::get_posts(&config, &client, url, 1).await.unwrap();
     }
 }
