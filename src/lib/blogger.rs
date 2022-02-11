@@ -6,7 +6,7 @@ use tokio::time::{sleep, Duration};
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use super::common::{Config, ReplayError};
+use super::common::{Config, Post, ReplayError};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -23,14 +23,6 @@ struct Blog {
 struct ItemSummary {
     total_items: u32,
     self_link: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Post {
-    id: String,
-    url: String,
-    title: String,
-    content: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -92,8 +84,10 @@ async fn get_page_once(
 }
 
 pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: u8)
-    -> Result<(), Box<dyn Error>>
+    -> Result<Vec<Post>, Box<dyn Error>>
 {
+    let mut ret: Vec<Post> = Vec::new();
+
     let blog = RetryIf::spawn(
         ExponentialBackoff::from_millis(500)
             .map(jitter)
@@ -109,7 +103,6 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
             "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
             blog.id))?;
 
-    let mut page_count = 0;
     let mut next_page_token: Option<String> = None;
     loop {
         let mut post_resp = RetryIf::spawn(
@@ -123,16 +116,10 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
             }
         ).await?;
 
-        page_count += 1;
-        println!("Page {}", page_count);
-        println!("=======");
-        for item in &post_resp.items {
-            println!("{}", item.title);
-        }
-        println!();
+        ret.append(&mut post_resp.items);
 
         next_page_token = post_resp.next_page_token.take();
-        if post_resp.items.len() < 1 || next_page_token.is_none() {
+        if next_page_token.is_none() {
             break;
         }
 
@@ -141,5 +128,5 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
         }
     }
 
-    Ok(())
+    Ok(ret)
 }

@@ -35,3 +35,11 @@ impl Display for ReplayError {
 impl Error for ReplayError {
     fn source(&self) -> Option<&(dyn Error + 'static)> { None }
 }
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct Post {
+    pub id: String,
+    pub url: String,
+    pub title: String,
+    pub content: Option<String>,
+}
