@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+atom_syndication = "0.11.0"
 clap = { version = "2.33", default-features = false }
 confy = "0.4"
 reqwest = { version = "0.11", features = ["json"] }

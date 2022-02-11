@@ -68,7 +68,7 @@ async fn get_page_once(
         .query(&[
                ("key", &config.blogger_api_key),
                ("orderBy", &String::from("published")),
-               ("fetchBodies", &String::from("false")),
+               ("fetchBodies", &String::from("true")),
         ]);
 
     let req = if let Some(token) = page_token {

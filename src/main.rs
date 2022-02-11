@@ -1,7 +1,8 @@
+use atom_syndication::Generator;
 use clap::clap_app;
 
 mod lib;
-use lib::common::Config;
+use lib::common::{Config, write_feed};
 use lib::blogger;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -10,6 +11,11 @@ static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_V
 
 #[tokio::main]
 async fn main() {
+    let _generator = Generator {
+        value: String::from(PROG_NAME),
+        uri: None,
+        version: Some(String::from(VERSION))
+    };
     let matches = clap_app!((PROG_NAME) =>
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
@@ -29,6 +35,7 @@ async fn main() {
             .unwrap();
 
         let url = scrape_matches.value_of("URL").unwrap();
-        blogger::get_posts(&config, &client, url, 1).await.unwrap();
+        let posts = blogger::get_posts(&config, &client, url, 1).await.unwrap();
+        write_feed("test_output.xml", posts).unwrap();
     }
 }
