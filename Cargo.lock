@@ -217,6 +217,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "feed-replay"
+version = "0.1.0"
+dependencies = [
+ "atom_syndication",
+ "clap",
+ "confy",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-retry",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -791,20 +805,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "winreg",
-]
-
-[[package]]
-name = "rss-replay"
-version = "0.1.0"
-dependencies = [
- "atom_syndication",
- "clap",
- "confy",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "tokio-retry",
 ]
 
 [[package]]

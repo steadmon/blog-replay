@@ -1,5 +1,5 @@
 [package]
-name = "rss-replay"
+name = "feed-replay"
 version = "0.1.0"
 edition = "2021"
 
