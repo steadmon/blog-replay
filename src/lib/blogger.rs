@@ -1,12 +1,14 @@
 use std::error::Error;
 
+use atom_syndication::{Entry, EntryBuilder, FixedDateTime, Person};
+use convert_case::{Case, Casing};
 use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
 use tokio::time::{sleep, Duration};
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use super::common::{Config, Post, ReplayError};
+use super::common::{Config, FeedData, ReplayError};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -23,6 +25,43 @@ struct Blog {
 struct ItemSummary {
     total_items: u32,
     self_link: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
+struct Author {
+    display_name: String,
+    url: String,
+}
+
+impl From<Author> for Person {
+    fn from(author: Author) -> Self {
+        Person {
+            name: author.display_name,
+            email: None,
+            uri: Some(author.url),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Post {
+    id: String,
+    url: String,
+    title: String,
+    content: Option<String>,
+    author: Author,
+}
+
+impl From<Post> for Entry {
+    fn from(post: Post) -> Self {
+        EntryBuilder::default()
+            .title(post.title)
+            .id("blah")
+            .updated(FixedDateTime::parse_from_rfc3339("2020-07-25T22:10:00-07:00").unwrap())
+            .author(post.author.into())
+            .build()
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -83,10 +122,10 @@ async fn get_page_once(
     Ok(resp.json().await?)
 }
 
-pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: u8)
-    -> Result<Vec<Post>, Box<dyn Error>>
+pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u8)
+    -> Result<FeedData, Box<dyn Error>>
 {
-    let mut ret: Vec<Post> = Vec::new();
+    let mut posts: Vec<Post> = Vec::new();
 
     let blog = RetryIf::spawn(
         ExponentialBackoff::from_millis(500)
@@ -116,7 +155,7 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
             }
         ).await?;
 
-        ret.append(&mut post_resp.items);
+        posts.append(&mut post_resp.items);
 
         next_page_token = post_resp.next_page_token.take();
         if next_page_token.is_none() {
@@ -128,5 +167,10 @@ pub async fn get_posts(config: &Config, client: &Client, blog_url: &str, delay: 
         }
     }
 
-    Ok(ret)
+    Ok(FeedData {
+        id: blog.name.to_case(Case::Snake),
+        title: blog.name,
+        url: blog.url,
+        entries: posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>()
+    })
 }

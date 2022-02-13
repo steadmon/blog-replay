@@ -13,6 +13,7 @@ dependencies = [
  "diligent-date-parser",
  "never",
  "quick-xml",
+ "serde",
 ]
 
 [[package]]
@@ -71,6 +72,7 @@ checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
 dependencies = [
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -94,6 +96,12 @@ dependencies = [
  "serde",
  "toml",
 ]
+
+[[package]]
+name = "convert_case"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb4a24b1aaf0fd0ce8b45161144d6f42cd91677fd5940fd431183eb023b3a2b8"
 
 [[package]]
 name = "core-foundation"
@@ -223,6 +231,7 @@ dependencies = [
  "atom_syndication",
  "clap",
  "confy",
+ "convert_case",
  "reqwest",
  "serde",
  "serde_json",
