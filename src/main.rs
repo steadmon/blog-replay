@@ -2,7 +2,7 @@ use atom_syndication::Generator;
 use clap::clap_app;
 
 mod lib;
-use lib::common::{Config, FeedData, write_feed};
+use lib::common::{Config, write_feed};
 use lib::blogger;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -36,6 +36,6 @@ async fn main() {
 
         let url = scrape_matches.value_of("URL").unwrap();
         let feed_data = blogger::get_feed(&config, &client, url, 1).await.unwrap();
-        write_feed("test_output.xml", &config, &generator, feed_data).unwrap();
+        write_feed("test_output.xml", &generator, feed_data).unwrap();
     }
 }

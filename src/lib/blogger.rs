@@ -57,7 +57,7 @@ impl From<Post> for Entry {
     fn from(post: Post) -> Self {
         EntryBuilder::default()
             .title(post.title)
-            .id("blah")
+            .id(post.id)
             .updated(FixedDateTime::parse_from_rfc3339("2020-07-25T22:10:00-07:00").unwrap())
             .author(post.author.into())
             .build()
@@ -167,8 +167,14 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
         }
     }
 
+    // Add our prefix to Blogger's post IDs
+    let blog_id = format!("{}/{}", config.feed_id_base, blog.name.to_case(Case::Snake));
+    for post in &mut posts {
+        post.id = format!("{}/{}", blog_id, post.id);
+    }
+
     Ok(FeedData {
-        id: blog.name.to_case(Case::Snake),
+        id: blog_id,
         title: blog.name,
         url: blog.url,
         entries: posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>()
