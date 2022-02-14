@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use atom_syndication::{Entry, EntryBuilder, FixedDateTime, Person};
+use atom_syndication::{Entry, EntryBuilder, Person};
 use convert_case::{Case, Casing};
 use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
@@ -8,7 +8,7 @@ use tokio::time::{sleep, Duration};
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use super::common::{Config, FeedData, ReplayError};
+use super::common::{Config, FeedData, ReplayError, parse_datetime_or_default};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -51,6 +51,7 @@ struct Post {
     title: String,
     content: Option<String>,
     author: Author,
+    updated: String,
 }
 
 impl From<Post> for Entry {
@@ -58,7 +59,7 @@ impl From<Post> for Entry {
         EntryBuilder::default()
             .title(post.title)
             .id(post.id)
-            .updated(FixedDateTime::parse_from_rfc3339("2020-07-25T22:10:00-07:00").unwrap())
+            .updated(parse_datetime_or_default(&post.updated))
             .author(post.author.into())
             .build()
     }

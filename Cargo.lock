@@ -229,6 +229,7 @@ name = "feed-replay"
 version = "0.1.0"
 dependencies = [
  "atom_syndication",
+ "chrono",
  "clap",
  "confy",
  "convert_case",
