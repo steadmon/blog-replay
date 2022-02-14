@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use atom_syndication::{Entry, EntryBuilder, Person};
+use atom_syndication::{ContentBuilder, Entry, EntryBuilder, Person};
 use convert_case::{Case, Casing};
 use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
@@ -56,11 +56,21 @@ struct Post {
 
 impl From<Post> for Entry {
     fn from(post: Post) -> Self {
+        let content = if let Some(value) = post.content {
+            Some(ContentBuilder::default()
+                 .value(value)
+                 .content_type(Some("html".to_string()))
+                 .build())
+        } else {
+            None
+        };
+
         EntryBuilder::default()
             .title(post.title)
             .id(post.id)
             .updated(parse_datetime_or_default(&post.updated))
             .author(post.author.into())
+            .content(content)
             .build()
     }
 }
