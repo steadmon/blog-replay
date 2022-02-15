@@ -2,7 +2,8 @@ use std::error::Error;
 use std::fs::File;
 use std::path::Path;
 
-use atom_syndication::{Entry, FeedBuilder, FixedDateTime, Generator, LinkBuilder};
+use atom_syndication::{Entry, FeedBuilder, Generator, LinkBuilder};
+use chrono::Utc;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize)]
@@ -25,7 +26,7 @@ pub fn write_feed<P: AsRef<Path>>(path: P, gen: &Generator, feed_data: FeedData)
                   .rel("alternate")
                   .build())
         .generator(gen.clone())
-        .updated(FixedDateTime::parse_from_rfc3339("2020-07-25T22:10:00-07:00").unwrap())
+        .updated(Utc::now())
         .entries(feed_data.entries)
         .build();
     feed.write_to(&f)?;
