@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use atom_syndication::{ContentBuilder, Entry, EntryBuilder, Person};
+use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use convert_case::{Case, Casing};
 use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
@@ -71,6 +71,10 @@ impl From<Post> for Entry {
             .updated(parse_datetime_or_default(&post.updated))
             .author(post.author.into())
             .content(content)
+            .link(LinkBuilder::default()
+                  .href(post.url)
+                  .rel("alternate")
+                  .build())
             .build()
     }
 }
