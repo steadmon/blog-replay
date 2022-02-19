@@ -9,15 +9,16 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape<'a>(scrape_matches: &ArgMatches<'a>, config: &Config) {
+async fn do_scrape<'a>(sub_match: &ArgMatches<'a>, config: &Config, db_path: &PathBuf) {
+    let db = sled::open(db_path).unwrap();
     let client = reqwest::ClientBuilder::new()
         .user_agent(USER_AGENT)
         .build()
         .unwrap();
 
-    let url = scrape_matches.value_of("URL").unwrap();
+    let url = sub_match.value_of("URL").unwrap();
     let feed_data = blogger::get_feed(&config, &client, url, 1).await.unwrap();
-    write_feed("test_output.xml", &generator, feed_data).unwrap();
+    db.insert(&feed_data.key, bincode::serialize(&feed_data).unwrap()).unwrap();
 }
 
 #[tokio::main]
@@ -38,9 +39,11 @@ async fn main() {
     ).get_matches();
 
     let config: Config = confy::load(PROG_NAME).unwrap();
+    let proj_dirs = directories::ProjectDirs::from("", "", PROG_NAME).unwrap();
+    let db_path = proj_dirs.data_dir().join("sled_db");
 
     match matches.subcommand() {
-        ("scrape", Some(scrape_matches)) => do_scrape(scrape_matches, &config, &db_path).await,
+        ("scrape", Some(sub_match)) => do_scrape(sub_match, &config, &db_path).await,
         _ => (),
     }
 }
