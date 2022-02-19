@@ -11,6 +11,8 @@ chrono = "0.4.19"
 clap = { version = "2.33", default-features = false }
 confy = "0.4"
 convert_case = "0.5.0"
+lazy_static = "1.4"
+regex = "1.5"
 reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

@@ -1,14 +1,13 @@
 use std::error::Error;
 
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
-use convert_case::{Case, Casing};
 use reqwest::{Client, Response, Url};
 use serde::{Serialize, Deserialize};
 use tokio::time::{sleep, Duration};
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use super::common::{Config, FeedData, ReplayError, parse_datetime_or_default};
+use super::common::{Config, FeedData, ReplayError, parse_datetime_or_default, sanitize_blog_key};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -183,13 +182,15 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
     }
 
     // Add our prefix to Blogger's post IDs
-    let blog_id = format!("{}/{}", config.feed_id_base, blog.name.to_case(Case::Snake));
+    let blog_key = sanitize_blog_key(&blog.name);
+    let blog_id = format!("{}/{}", config.feed_id_base, blog_key);
     for post in &mut posts {
         post.id = format!("{}/{}", blog_id, post.id);
     }
 
     Ok(FeedData {
         id: blog_id,
+        key: blog_key,
         title: blog.name,
         url: blog.url,
         entries: posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>()

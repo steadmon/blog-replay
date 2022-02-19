@@ -9,6 +9,7 @@ use serde::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize)]
 pub struct FeedData {
     pub id: String,
+    pub key: String,
     pub title: String,
     pub url: String,
     pub entries: Vec<Entry>,
