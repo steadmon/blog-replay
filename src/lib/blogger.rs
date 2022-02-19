@@ -183,7 +183,7 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
 
     // Add our prefix to Blogger's post IDs
     let blog_key = sanitize_blog_key(&blog.name);
-    let blog_id = format!("{}/{}", config.feed_id_base, blog_key);
+    let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
     for post in &mut posts {
         post.id = format!("{}/{}", blog_id, post.id);
     }
