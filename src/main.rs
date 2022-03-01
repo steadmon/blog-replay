@@ -1,7 +1,8 @@
+use std::error::Error;
 use std::path::{Path, PathBuf};
 
 use atom_syndication::Generator;
-use clap::{ArgMatches, clap_app};
+use clap::clap_app;
 
 mod lib;
 use lib::common::{Config, FeedData, write_feed};
@@ -11,38 +12,40 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape<'a>(sub_match: &ArgMatches<'a>, config: &Config, db_path: &PathBuf) {
-    let db = sled::open(db_path).unwrap();
+async fn do_scrape<'a>(url: &str, config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+    let db = sled::open(db_path)?;
     let client = reqwest::ClientBuilder::new()
         .user_agent(USER_AGENT)
-        .build()
-        .unwrap();
+        .build()?;
 
-    let url = sub_match.value_of("URL").unwrap();
-    let feed_data = blogger::get_feed(&config, &client, url, 1).await.unwrap();
-    db.insert(&feed_data.key, bincode::serialize(&feed_data).unwrap()).unwrap();
+    let feed_data = blogger::get_feed(&config, &client, url, 1).await?;
+    db.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
+
+    Ok(())
 }
 
-async fn do_generate<'a>(config: &Config, db_path: &PathBuf) {
+async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let generator = Generator {
         value: String::from(PROG_NAME),
         uri: None,
         version: Some(String::from(VERSION))
     };
-    let db = sled::open(db_path).unwrap();
+    let db = sled::open(db_path)?;
     for i in db.iter() {
         if let Ok((key, val)) = i {
-            let key = std::str::from_utf8(&key).unwrap();
-            let feed_data: FeedData = bincode::deserialize(&val).unwrap();
+            let key = std::str::from_utf8(&key)?;
+            let feed_data: FeedData = bincode::deserialize(&val)?;
             let mut feed_path = Path::new(&config.feed_path).join(&key);
             feed_path.set_extension("xml");
-            write_feed(&feed_path, &generator, feed_data).unwrap();
+            write_feed(&feed_path, &generator, feed_data)?;
         }
     }
+
+    Ok(())
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     let matches = clap_app!((PROG_NAME) =>
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
@@ -56,13 +59,16 @@ async fn main() {
         )
     ).get_matches();
 
-    let config: Config = confy::load(PROG_NAME).unwrap();
-    let proj_dirs = directories::ProjectDirs::from("", "", PROG_NAME).unwrap();
+    let config: Config = confy::load(PROG_NAME)?;
+    let proj_dirs = directories::ProjectDirs::from("", "", PROG_NAME).ok_or("Can't determine project dirs")?;
     let db_path = proj_dirs.data_dir().join("sled_db");
 
     match matches.subcommand() {
-        ("scrape",   Some(sub_match)) => do_scrape(sub_match, &config, &db_path).await,
+        ("scrape",   Some(sub_match)) => {
+            let url_arg = sub_match.value_of("URL");
+            do_scrape(url_arg.ok_or("missing URL arg")?, &config, &db_path).await
+        },
         ("generate", Some(_))         => do_generate(&config, &db_path).await,
-        _ => (),
+        _ => Ok(()),
     }
 }
