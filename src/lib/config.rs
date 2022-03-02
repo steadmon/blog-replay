@@ -8,6 +8,7 @@ pub struct Config {
     pub feed_url_base: String,
     pub feed_path: String,
     pub max_retries: usize,
+    pub max_entries: Option<usize>
 }
 
 impl Default for Config {
@@ -17,6 +18,7 @@ impl Default for Config {
             feed_url_base: "".to_string(),
             feed_path: "".to_string(),
             max_retries: 5,
+            max_entries: None,
         }
     }
 }

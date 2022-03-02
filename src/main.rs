@@ -50,6 +50,13 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
             let item = entry_tree.pop_min()?;
             if let Some((_, val)) = item {
                 feed.entries.push(bincode::deserialize(&val)?);
+                if let Some(max_entries) = config.max_entries {
+                    let len = feed.entries.len();
+                    if len > max_entries {
+                        feed.entries.rotate_left(len - max_entries);
+                        feed.entries.truncate(max_entries);
+                    }
+                }
                 feed.write_to(File::create(&feed_path)?)?;
             }
         }
