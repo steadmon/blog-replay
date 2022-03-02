@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let matches = clap_app!((PROG_NAME) =>
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
-        (about: "Replays blog archives into an RSS feed")
+        (about: "Replays blog archives into an Atom feed")
         (@subcommand scrape =>
             (about: "loads a blog's archive into the local DB for later replay")
             (@arg URL: +required "URL of the blog to scrape")
