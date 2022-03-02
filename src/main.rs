@@ -1,11 +1,12 @@
 use std::error::Error;
+use std::fs::File;
 use std::path::{Path, PathBuf};
 
-use atom_syndication::{Entry, Generator};
+use atom_syndication::Generator;
 use clap::clap_app;
 
 mod lib;
-use lib::common::{Config, FeedData, write_feed};
+use lib::common::*;
 use lib::blogger;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
@@ -44,15 +45,13 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
             let key = std::str::from_utf8(&key)?;
             let feed_data: FeedData = bincode::deserialize(&val)?;
             let feed_path = Path::new(&config.feed_path).join(&key).with_extension("xml");
+            let mut feed = read_or_create_feed(&feed_path, &generator, &feed_data)?;
             let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
-            let mut entries = Vec::<Entry>::new();
-
-            for entry in entry_tree.iter() {
-                if let Ok((_, val)) = entry {
-                    entries.push(bincode::deserialize(&val)?);
-                }
+            let item = entry_tree.pop_min()?;
+            if let Some((_, val)) = item {
+                feed.entries.push(bincode::deserialize(&val)?);
+                feed.write_to(File::create(&feed_path)?)?;
             }
-            write_feed(&feed_path, &generator, feed_data, entries)?;
         }
     }
 

@@ -7,7 +7,7 @@ use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use regex::Regex;
 
-pub use super::atom::{FeedData, write_feed};
+pub use super::atom::{FeedData, read_or_create_feed};
 pub use super::config::Config;
 
 #[derive(Debug)]
