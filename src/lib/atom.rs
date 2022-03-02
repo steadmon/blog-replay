@@ -12,10 +12,10 @@ pub struct FeedData {
     pub key: String,
     pub title: String,
     pub url: String,
-    pub entries: Vec<Entry>,
 }
 
-pub fn write_feed<P: AsRef<Path>>(path: P, gen: &Generator, feed_data: FeedData)
+pub fn write_feed<P: AsRef<Path>>(
+    path: P, gen: &Generator, feed_data: FeedData, entries: Vec<Entry>)
   -> Result<(), Box<dyn Error>>
 {
     let f = File::create(path)?;
@@ -28,7 +28,7 @@ pub fn write_feed<P: AsRef<Path>>(path: P, gen: &Generator, feed_data: FeedData)
                   .build())
         .generator(gen.clone())
         .updated(Utc::now())
-        .entries(feed_data.entries)
+        .entries(entries)
         .build();
     feed.write_to(&f)?;
 

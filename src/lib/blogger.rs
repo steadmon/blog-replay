@@ -7,7 +7,9 @@ use tokio::time::{sleep, Duration};
 use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
-use super::common::{Config, FeedData, ReplayError, parse_datetime_or_default, sanitize_blog_key};
+use super::common::{
+    Config, FeedData, ReplayError, parse_datetime, parse_datetime_or_default, sanitize_blog_key
+};
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -50,6 +52,7 @@ struct Post {
     title: String,
     content: Option<String>,
     author: Author,
+    published: String,
     updated: String,
 }
 
@@ -67,6 +70,7 @@ impl From<Post> for Entry {
         EntryBuilder::default()
             .title(post.title)
             .id(post.id)
+            .published(parse_datetime(&post.published))
             .updated(parse_datetime_or_default(&post.updated))
             .author(post.author.into())
             .content(content)
@@ -137,7 +141,7 @@ async fn get_page_once(
 }
 
 pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u8)
-    -> Result<FeedData, Box<dyn Error>>
+    -> Result<(FeedData, Vec<Entry>), Box<dyn Error>>
 {
     let mut posts: Vec<Post> = Vec::new();
 
@@ -188,11 +192,12 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
         post.id = format!("{}/{}", blog_id, post.id);
     }
 
-    Ok(FeedData {
-        id: blog_id,
-        key: blog_key,
-        title: blog.name,
-        url: blog.url,
-        entries: posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>()
-    })
+    Ok((FeedData {
+            id: blog_id,
+            key: blog_key,
+            title: blog.name,
+            url: blog.url,
+        },
+        posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>()
+    ))
 }

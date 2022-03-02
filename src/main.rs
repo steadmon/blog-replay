@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::path::{Path, PathBuf};
 
-use atom_syndication::Generator;
+use atom_syndication::{Entry, Generator};
 use clap::clap_app;
 
 mod lib;
@@ -18,8 +18,15 @@ async fn do_scrape<'a>(url: &str, config: &Config, db_path: &PathBuf) -> Result<
         .user_agent(USER_AGENT)
         .build()?;
 
-    let feed_data = blogger::get_feed(&config, &client, url, 1).await?;
-    db.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
+    let (feed_data, entries) = blogger::get_feed(&config, &client, url, 1).await?;
+    let meta_tree = db.open_tree("feed_metadata")?;
+    meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
+    let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
+    for entry in &entries {
+        entry_tree.insert(
+            entry.published.unwrap_or(entry.updated).to_rfc3339(),
+            bincode::serialize(&entry)?)?;
+    }
 
     Ok(())
 }
@@ -31,13 +38,21 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
         version: Some(String::from(VERSION))
     };
     let db = sled::open(db_path)?;
-    for i in db.iter() {
-        if let Ok((key, val)) = i {
+    let meta_tree = db.open_tree("feed_metadata")?;
+    for meta in meta_tree.iter() {
+        if let Ok((key, val)) = meta {
             let key = std::str::from_utf8(&key)?;
             let feed_data: FeedData = bincode::deserialize(&val)?;
-            let mut feed_path = Path::new(&config.feed_path).join(&key);
-            feed_path.set_extension("xml");
-            write_feed(&feed_path, &generator, feed_data)?;
+            let feed_path = Path::new(&config.feed_path).join(&key).with_extension("xml");
+            let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
+            let mut entries = Vec::<Entry>::new();
+
+            for entry in entry_tree.iter() {
+                if let Ok((_, val)) = entry {
+                    entries.push(bincode::deserialize(&val)?);
+                }
+            }
+            write_feed(&feed_path, &generator, feed_data, entries)?;
         }
     }
 
