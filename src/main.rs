@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use atom_syndication::Generator;
 use clap::clap_app;
@@ -28,6 +28,8 @@ async fn do_scrape<'a>(url: &str, config: &Config, db_path: &PathBuf) -> Result<
             entry.published.unwrap_or(entry.updated).to_rfc3339(),
             bincode::serialize(&entry)?)?;
     }
+    // Remove the correspondng generated feed if present, so that we don't duplicate entries.
+    let _ = std::fs::remove_file(path_from_feed_data(config, &feed_data));
 
     Ok(())
 }
@@ -41,10 +43,9 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
     let db = sled::open(db_path)?;
     let meta_tree = db.open_tree("feed_metadata")?;
     for meta in meta_tree.iter() {
-        if let Ok((key, val)) = meta {
-            let key = std::str::from_utf8(&key)?;
+        if let Ok((_, val)) = meta {
             let feed_data: FeedData = bincode::deserialize(&val)?;
-            let feed_path = Path::new(&config.feed_path).join(&key).with_extension("xml");
+            let feed_path = path_from_feed_data(config, &feed_data);
             let mut feed = read_or_create_feed(&feed_path, &generator, &feed_data)?;
             let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
             let item = entry_tree.pop_min()?;
