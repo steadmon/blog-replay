@@ -26,7 +26,6 @@ struct Blog {
 #[serde(rename_all = "camelCase")]
 struct ItemSummary {
     total_items: u32,
-    self_link: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -135,7 +134,7 @@ async fn retry_request<F, R, T>(config: &Config, action: F)
     ).await
 }
 
-pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u8)
+pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u64)
     -> Result<(FeedData, Vec<Entry>), Box<dyn Error>>
 {
     let mut posts: Vec<Post> = Vec::new();
@@ -144,27 +143,42 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
     let blog = retry_request(
         config, || get_blog_once(config, client, &blog_api_url, blog_url)).await?;
 
-    let posts_api_url = Url::parse(&format!(
-            "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
-            blog.id))?;
+    if blog.posts.total_items > 0 {
+        let posts_api_url = Url::parse(&format!(
+                "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
+                blog.id))?;
 
-    let mut next_page_token: Option<String> = None;
-    loop {
-        let mut post_resp = retry_request(
-            config,
-            || get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
-        ).await?;
-        posts.append(&mut post_resp.items);
+        let mut next_page_token: Option<String> = None;
+        loop {
+            let mut post_resp = retry_request(
+                config,
+                || get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
+            ).await?;
+            posts.append(&mut post_resp.items);
 
-        next_page_token = post_resp.next_page_token.take();
-        if next_page_token.is_none() {
-            break;
-        }
+            next_page_token = post_resp.next_page_token.take();
+            if next_page_token.is_none() {
+                break;
+            }
 
-        if delay > 0 {
-            sleep(Duration::from_secs(delay as u64)).await;
+            if delay > 0 {
+                sleep(Duration::from_secs(delay)).await;
+            }
         }
     }
+
+    if blog.pages.total_items > 0 {
+        let pages_api_url = Url::parse(&format!(
+                "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
+                blog.id))?;
+        let mut page_resp = retry_request(
+            config,
+            || get_page_once(config, client, &pages_api_url, None)
+        ).await?;
+        posts.append(&mut page_resp.items);
+    }
+
+    // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
 
     // Add our prefix to Blogger's post IDs
     let blog_key = sanitize_blog_key(&blog.name);
