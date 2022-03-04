@@ -143,17 +143,28 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
     let blog = retry_request(
         config, || get_blog_once(config, client, &blog_api_url, blog_url)).await?;
 
+    println!(r#"Scraping "{}" ({} posts, {} pages)"#,
+        blog.name, blog.posts.total_items, blog.pages.total_items);
     if blog.posts.total_items > 0 {
         let posts_api_url = Url::parse(&format!(
                 "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
                 blog.id))?;
 
         let mut next_page_token: Option<String> = None;
+        let pb = indicatif::ProgressBar::new(blog.posts.total_items as u64);
+        pb.set_style(indicatif::ProgressStyle::default_bar().template(
+                "{spinner:.blue} [{bar:.blue}] ({pos}/{len}) \
+                [elapsed: {elapsed_precise}, eta: {eta_precise}]")
+            .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+        );
+        pb.enable_steady_tick(100);
         loop {
             let mut post_resp = retry_request(
                 config,
                 || get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
             ).await?;
+            pb.inc(post_resp.items.len().try_into().unwrap());
             posts.append(&mut post_resp.items);
 
             next_page_token = post_resp.next_page_token.take();
@@ -165,6 +176,7 @@ pub async fn get_feed(config: &Config, client: &Client, blog_url: &str, delay: u
                 sleep(Duration::from_secs(delay)).await;
             }
         }
+        pb.finish()
     }
 
     if blog.pages.total_items > 0 {
