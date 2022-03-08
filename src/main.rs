@@ -36,7 +36,33 @@ async fn do_scrape(url: &str, config: &Config, db_path: &PathBuf) -> Result<(), 
     Ok(())
 }
 
-async fn do_generate(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+fn generate_feed(config: &Config, feed_data: &FeedData, gen: &Generator, db: &sled::Db)
+    -> Result<(), Box<dyn Error>>
+{
+    let feed_path = path_from_feed_data(config, &feed_data);
+    let mut feed = read_or_create_feed(&feed_path, gen, &feed_data)?;
+    let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
+    let item = entry_tree.pop_min()?;
+    if let Some((_, val)) = item {
+        let mut entry: Entry = bincode::deserialize(&val)?;
+        entry.set_updated(Utc::now());
+        feed.entries.push(entry);
+        if let Some(max_entries) = config.max_entries {
+            let len = feed.entries.len();
+            if len > max_entries {
+                feed.entries.rotate_left(len - max_entries);
+                feed.entries.truncate(max_entries);
+            }
+        }
+        feed.set_updated(Utc::now());
+        feed.write_to(File::create(&feed_path)?)?;
+        std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))?;
+    }
+
+    Ok(())
+}
+
+fn do_generate(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let generator = Generator {
         value: String::from(PROG_NAME),
         uri: None,
@@ -47,25 +73,7 @@ async fn do_generate(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn E
     for meta in meta_tree.iter() {
         if let Ok((_, val)) = meta {
             let feed_data: FeedData = bincode::deserialize(&val)?;
-            let feed_path = path_from_feed_data(config, &feed_data);
-            let mut feed = read_or_create_feed(&feed_path, &generator, &feed_data)?;
-            let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
-            let item = entry_tree.pop_min()?;
-            if let Some((_, val)) = item {
-                let mut entry: Entry = bincode::deserialize(&val)?;
-                entry.set_updated(Utc::now());
-                feed.entries.push(entry);
-                if let Some(max_entries) = config.max_entries {
-                    let len = feed.entries.len();
-                    if len > max_entries {
-                        feed.entries.rotate_left(len - max_entries);
-                        feed.entries.truncate(max_entries);
-                    }
-                }
-                feed.set_updated(Utc::now());
-                feed.write_to(File::create(&feed_path)?)?;
-                std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))?;
-            }
+            generate_feed(config, &feed_data, &generator, &db)?;
         }
     }
 
@@ -96,7 +104,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let url_arg = sub_match.value_of("URL");
             do_scrape(url_arg.ok_or("missing URL arg")?, &config, &db_path).await
         },
-        ("generate", Some(_))         => do_generate(&config, &db_path).await,
+        ("generate", Some(_))         => do_generate(&config, &db_path),
         _ => Ok(()),
     }
 }
