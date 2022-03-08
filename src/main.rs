@@ -15,7 +15,7 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape<'a>(url: &str, config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+async fn do_scrape(url: &str, config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let db = sled::open(db_path)?;
     let client = reqwest::ClientBuilder::new()
         .user_agent(USER_AGENT)
@@ -36,7 +36,7 @@ async fn do_scrape<'a>(url: &str, config: &Config, db_path: &PathBuf) -> Result<
     Ok(())
 }
 
-async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
+async fn do_generate(config: &Config, db_path: &PathBuf) -> Result<(), Box<dyn Error>> {
     let generator = Generator {
         value: String::from(PROG_NAME),
         uri: None,
