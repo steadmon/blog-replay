@@ -19,7 +19,7 @@ pub fn parse_datetime_or_default(s: &str) -> DateTime<FixedOffset> {
 }
 
 pub fn path_from_feed_data(config: &Config, f: &FeedData) -> PathBuf {
-    Path::new(&config.feed_path).join(&f.key).with_extension("xml")
+    Path::new(&config.feed_path).join(&f.key).with_extension("atom")
 }
 
 pub fn sanitize_blog_key(s: &String) -> String {

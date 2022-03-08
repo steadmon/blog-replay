@@ -1,5 +1,6 @@
 use std::error::Error;
-use std::fs::File;
+use std::fs::{File, Permissions};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use atom_syndication::Generator;
@@ -59,6 +60,7 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
                     }
                 }
                 feed.write_to(File::create(&feed_path)?)?;
+                std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))?;
             }
         }
     }
