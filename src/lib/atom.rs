@@ -4,7 +4,6 @@ use std::fs::File;
 use std::path::Path;
 
 use atom_syndication::{Feed, FeedBuilder, Generator, LinkBuilder};
-use chrono::Utc;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -35,6 +34,5 @@ fn feed_from_metadata(gen: &Generator, feed_data: FeedData) -> Feed {
                   .rel("alternate")
                   .build())
         .generator(gen.clone())
-        .updated(Utc::now())
         .build()
 }

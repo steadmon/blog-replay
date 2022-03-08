@@ -3,7 +3,8 @@ use std::fs::{File, Permissions};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use atom_syndication::Generator;
+use atom_syndication::{Entry, Generator};
+use chrono::Utc;
 use clap::clap_app;
 
 mod lib;
@@ -51,7 +52,9 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
             let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
             let item = entry_tree.pop_min()?;
             if let Some((_, val)) = item {
-                feed.entries.push(bincode::deserialize(&val)?);
+                let mut entry: Entry = bincode::deserialize(&val)?;
+                entry.set_updated(Utc::now());
+                feed.entries.push(entry);
                 if let Some(max_entries) = config.max_entries {
                     let len = feed.entries.len();
                     if len > max_entries {
@@ -59,6 +62,7 @@ async fn do_generate<'a>(config: &Config, db_path: &PathBuf) -> Result<(), Box<d
                         feed.entries.truncate(max_entries);
                     }
                 }
+                feed.set_updated(Utc::now());
                 feed.write_to(File::create(&feed_path)?)?;
                 std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))?;
             }

@@ -9,7 +9,7 @@ use tokio_retry::RetryIf;
 use tokio_retry::strategy::{ExponentialBackoff, jitter};
 
 use super::common::{
-    Config, FeedData, parse_datetime, parse_datetime_or_default, sanitize_blog_key
+    Config, FeedData, parse_datetime, sanitize_blog_key
 };
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,7 +53,6 @@ struct Post {
     content: Option<String>,
     author: Author,
     published: String,
-    updated: String,
 }
 
 impl From<Post> for Entry {
@@ -71,7 +70,6 @@ impl From<Post> for Entry {
             .title(post.title)
             .id(post.id)
             .published(parse_datetime(&post.published))
-            .updated(parse_datetime_or_default(&post.updated))
             .author(post.author.into())
             .content(content)
             .link(LinkBuilder::default()
