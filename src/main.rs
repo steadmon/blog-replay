@@ -23,7 +23,7 @@ async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
         .user_agent(USER_AGENT)
         .build()?;
 
-    let (feed_data, entries) = blogger::get_feed(&config, &client, url, 1).await?;
+    let (feed_data, entries) = blogger::get_feed(config, &client, url, 1).await?;
     let meta_tree = db.open_tree("feed_metadata")?;
     meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
@@ -44,8 +44,8 @@ async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
 fn generate_feed(config: &Config, feed_data: &FeedData, gen: &Generator, db: &sled::Db)
     -> Result<(), Box<dyn Error>>
 {
-    let feed_path = path_from_feed_data(config, &feed_data);
-    let mut feed = read_or_create_feed(&feed_path, gen, &feed_data)?;
+    let feed_path = path_from_feed_data(config, feed_data);
+    let mut feed = read_or_create_feed(&feed_path, gen, feed_data)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
     let item = entry_tree.pop_min()?;
     if let Some((_, val)) = item {
