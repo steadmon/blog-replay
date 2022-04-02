@@ -4,7 +4,7 @@
 args@{
   release ? true,
   rootFeatures ? [
-    "feed-replay/default"
+    "blog-replay/default"
   ],
   rustPackages,
   buildRustPackages,
@@ -35,7 +35,7 @@ in
 {
   cargo2nixVersion = "0.10.0";
   workspace = {
-    feed-replay = rustPackages.unknown.feed-replay."0.1.1";
+    blog-replay = rustPackages.unknown.blog-replay."0.1.2";
   };
   "registry+https://github.com/rust-lang/crates.io-index".aho-corasick."0.7.18" = overridableMkRustCrate (profileName: rec {
     name = "aho-corasick";
@@ -110,6 +110,31 @@ in
     features = builtins.concatLists [
       [ "default" ]
     ];
+  });
+  
+  "unknown".blog-replay."0.1.2" = overridableMkRustCrate (profileName: rec {
+    name = "blog-replay";
+    version = "0.1.2";
+    registry = "unknown";
+    src = fetchCrateLocal workspaceSrc;
+    dependencies = {
+      atom_syndication = rustPackages."registry+https://github.com/rust-lang/crates.io-index".atom_syndication."0.11.0" { inherit profileName; };
+      bincode = rustPackages."registry+https://github.com/rust-lang/crates.io-index".bincode."1.3.3" { inherit profileName; };
+      chrono = rustPackages."registry+https://github.com/rust-lang/crates.io-index".chrono."0.4.19" { inherit profileName; };
+      clap = rustPackages."registry+https://github.com/rust-lang/crates.io-index".clap."2.33.3" { inherit profileName; };
+      confy = rustPackages."registry+https://github.com/rust-lang/crates.io-index".confy."0.4.0" { inherit profileName; };
+      convert_case = rustPackages."registry+https://github.com/rust-lang/crates.io-index".convert_case."0.5.0" { inherit profileName; };
+      directories = rustPackages."registry+https://github.com/rust-lang/crates.io-index".directories."2.0.2" { inherit profileName; };
+      indicatif = rustPackages."registry+https://github.com/rust-lang/crates.io-index".indicatif."0.16.2" { inherit profileName; };
+      lazy_static = rustPackages."registry+https://github.com/rust-lang/crates.io-index".lazy_static."1.4.0" { inherit profileName; };
+      regex = rustPackages."registry+https://github.com/rust-lang/crates.io-index".regex."1.5.4" { inherit profileName; };
+      reqwest = rustPackages."registry+https://github.com/rust-lang/crates.io-index".reqwest."0.11.6" { inherit profileName; };
+      serde = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde."1.0.130" { inherit profileName; };
+      serde_json = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde_json."1.0.71" { inherit profileName; };
+      sled = rustPackages."registry+https://github.com/rust-lang/crates.io-index".sled."0.34.7" { inherit profileName; };
+      tokio = rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio."1.14.0" { inherit profileName; };
+      tokio_retry = rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio-retry."0.3.0" { inherit profileName; };
+    };
   });
   
   "registry+https://github.com/rust-lang/crates.io-index".bumpalo."3.8.0" = overridableMkRustCrate (profileName: rec {
@@ -443,31 +468,6 @@ in
     ];
     dependencies = {
       cfg_if = rustPackages."registry+https://github.com/rust-lang/crates.io-index".cfg-if."1.0.0" { inherit profileName; };
-    };
-  });
-  
-  "unknown".feed-replay."0.1.1" = overridableMkRustCrate (profileName: rec {
-    name = "feed-replay";
-    version = "0.1.1";
-    registry = "unknown";
-    src = fetchCrateLocal workspaceSrc;
-    dependencies = {
-      atom_syndication = rustPackages."registry+https://github.com/rust-lang/crates.io-index".atom_syndication."0.11.0" { inherit profileName; };
-      bincode = rustPackages."registry+https://github.com/rust-lang/crates.io-index".bincode."1.3.3" { inherit profileName; };
-      chrono = rustPackages."registry+https://github.com/rust-lang/crates.io-index".chrono."0.4.19" { inherit profileName; };
-      clap = rustPackages."registry+https://github.com/rust-lang/crates.io-index".clap."2.33.3" { inherit profileName; };
-      confy = rustPackages."registry+https://github.com/rust-lang/crates.io-index".confy."0.4.0" { inherit profileName; };
-      convert_case = rustPackages."registry+https://github.com/rust-lang/crates.io-index".convert_case."0.5.0" { inherit profileName; };
-      directories = rustPackages."registry+https://github.com/rust-lang/crates.io-index".directories."2.0.2" { inherit profileName; };
-      indicatif = rustPackages."registry+https://github.com/rust-lang/crates.io-index".indicatif."0.16.2" { inherit profileName; };
-      lazy_static = rustPackages."registry+https://github.com/rust-lang/crates.io-index".lazy_static."1.4.0" { inherit profileName; };
-      regex = rustPackages."registry+https://github.com/rust-lang/crates.io-index".regex."1.5.4" { inherit profileName; };
-      reqwest = rustPackages."registry+https://github.com/rust-lang/crates.io-index".reqwest."0.11.6" { inherit profileName; };
-      serde = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde."1.0.130" { inherit profileName; };
-      serde_json = rustPackages."registry+https://github.com/rust-lang/crates.io-index".serde_json."1.0.71" { inherit profileName; };
-      sled = rustPackages."registry+https://github.com/rust-lang/crates.io-index".sled."0.34.7" { inherit profileName; };
-      tokio = rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio."1.14.0" { inherit profileName; };
-      tokio_retry = rustPackages."registry+https://github.com/rust-lang/crates.io-index".tokio-retry."0.3.0" { inherit profileName; };
     };
   });
   

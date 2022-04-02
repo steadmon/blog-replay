@@ -24,10 +24,10 @@
 
       in rec {
         packages = {
-          feed-replay = (rustPkgs.workspace.feed-replay {}).bin;
+          blog-replay = (rustPkgs.workspace.blog-replay {}).bin;
         };
 
-        defaultPackage = packages.feed-replay;
+        defaultPackage = packages.blog-replay;
       }
     );
 }

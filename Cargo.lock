@@ -53,6 +53,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
+name = "blog-replay"
+version = "0.1.2"
+dependencies = [
+ "atom_syndication",
+ "bincode",
+ "chrono",
+ "clap",
+ "confy",
+ "convert_case",
+ "directories",
+ "indicatif",
+ "lazy_static",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sled",
+ "tokio",
+ "tokio-retry",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -300,28 +322,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a74ea89a0a1b98f6332de42c95baff457ada66d1cb4030f9ff151b2041a1c746"
 dependencies = [
  "cfg-if 1.0.0",
-]
-
-[[package]]
-name = "feed-replay"
-version = "0.1.1"
-dependencies = [
- "atom_syndication",
- "bincode",
- "chrono",
- "clap",
- "confy",
- "convert_case",
- "directories",
- "indicatif",
- "lazy_static",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sled",
- "tokio",
- "tokio-retry",
 ]
 
 [[package]]
