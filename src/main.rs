@@ -8,16 +8,19 @@ use chrono::Utc;
 use clap::clap_app;
 
 mod lib;
-use lib::common::*;
 use lib::blogger;
+use lib::common::*;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
-    -> Result<(), Box<dyn Error>>
-{
+async fn do_scrape(
+    url: &str,
+    config: &Config,
+    gen: &Generator,
+    db_path: &Path,
+) -> Result<(), Box<dyn Error>> {
     let db = sled::open(db_path)?;
     let client = reqwest::ClientBuilder::new()
         .user_agent(USER_AGENT)
@@ -30,7 +33,8 @@ async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
     for entry in &entries {
         entry_tree.insert(
             entry.published.unwrap_or(entry.updated).to_rfc3339(),
-            bincode::serialize(&entry)?)?;
+            bincode::serialize(&entry)?,
+        )?;
     }
     // Remove the correspondng generated feed if present, so that we don't duplicate entries.
     let _ = std::fs::remove_file(path_from_feed_data(config, &feed_data));
@@ -41,9 +45,12 @@ async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
     Ok(())
 }
 
-fn generate_feed(config: &Config, feed_data: &FeedData, gen: &Generator, db: &sled::Db)
-    -> Result<(), Box<dyn Error>>
-{
+fn generate_feed(
+    config: &Config,
+    feed_data: &FeedData,
+    gen: &Generator,
+    db: &sled::Db,
+) -> Result<(), Box<dyn Error>> {
     let feed_path = path_from_feed_data(config, feed_data);
     let mut feed = read_or_create_feed(&feed_path, gen, feed_data)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
@@ -67,9 +74,7 @@ fn generate_feed(config: &Config, feed_data: &FeedData, gen: &Generator, db: &sl
     Ok(())
 }
 
-fn do_generate(config: &Config, gen: &Generator, db_path: &Path)
-    -> Result<(), Box<dyn Error>>
-{
+fn do_generate(config: &Config, gen: &Generator, db_path: &Path) -> Result<(), Box<dyn Error>> {
     let db = sled::open(db_path)?;
     let meta_tree = db.open_tree("feed_metadata")?;
     for (_, meta) in meta_tree.iter().flatten() {
@@ -93,23 +98,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         (@subcommand generate =>
             (about: "generates a feed for each blog in the local DB")
         )
-    ).get_matches();
+    )
+    .get_matches();
 
     let config: Config = confy::load(PROG_NAME)?;
-    let proj_dirs = directories::ProjectDirs::from("", "", PROG_NAME).ok_or("Can't determine project dirs")?;
+    let proj_dirs =
+        directories::ProjectDirs::from("", "", PROG_NAME).ok_or("Can't determine project dirs")?;
     let db_path = proj_dirs.data_dir().join("sled_db");
     let generator = Generator {
         value: String::from(PROG_NAME),
         uri: None,
-        version: Some(String::from(VERSION))
+        version: Some(String::from(VERSION)),
     };
 
     match matches.subcommand() {
-        ("scrape",   Some(sub_match)) => {
+        ("scrape", Some(sub_match)) => {
             let url_arg = sub_match.value_of("URL");
-            do_scrape(url_arg.ok_or("missing URL arg")?, &config, &generator, &db_path).await
-        },
-        ("generate", Some(_))         => do_generate(&config, &generator, &db_path),
+            do_scrape(
+                url_arg.ok_or("missing URL arg")?,
+                &config,
+                &generator,
+                &db_path,
+            )
+            .await
+        }
+        ("generate", Some(_)) => do_generate(&config, &generator, &db_path),
         _ => Ok(()),
     }
 }

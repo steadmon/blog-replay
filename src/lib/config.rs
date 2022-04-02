@@ -1,6 +1,6 @@
 use std::default::Default;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct Config {
@@ -8,7 +8,7 @@ pub struct Config {
     pub feed_url_base: String,
     pub feed_path: String,
     pub max_retries: usize,
-    pub max_entries: Option<usize>
+    pub max_entries: Option<usize>,
 }
 
 impl Default for Config {
@@ -22,4 +22,3 @@ impl Default for Config {
         }
     }
 }
-
