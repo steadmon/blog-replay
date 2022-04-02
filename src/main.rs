@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fs::{File, Permissions};
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::path::Path;
 
 use atom_syndication::{Entry, Generator};
 use chrono::Utc;
@@ -15,7 +15,7 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &PathBuf)
+async fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path)
     -> Result<(), Box<dyn Error>>
 {
     let db = sled::open(db_path)?;
@@ -67,7 +67,7 @@ fn generate_feed(config: &Config, feed_data: &FeedData, gen: &Generator, db: &sl
     Ok(())
 }
 
-fn do_generate(config: &Config, gen: &Generator, db_path: &PathBuf)
+fn do_generate(config: &Config, gen: &Generator, db_path: &Path)
     -> Result<(), Box<dyn Error>>
 {
     let db = sled::open(db_path)?;

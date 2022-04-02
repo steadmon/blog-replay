@@ -16,7 +16,7 @@ pub fn path_from_feed_data(config: &Config, f: &FeedData) -> PathBuf {
     Path::new(&config.feed_path).join(&f.key).with_extension("atom")
 }
 
-pub fn sanitize_blog_key(s: &String) -> String {
+pub fn sanitize_blog_key(s: &str) -> String {
     lazy_static! {
         static ref SANITIZER: Regex = Regex::new(r"[^-&\[\]a-z0-9]+").unwrap();
     };
