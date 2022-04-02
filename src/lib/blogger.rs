@@ -57,14 +57,9 @@ struct Post {
 
 impl From<Post> for Entry {
     fn from(post: Post) -> Self {
-        let content = if let Some(value) = post.content {
-            Some(ContentBuilder::default()
-                 .value(value)
-                 .content_type(Some("html".to_string()))
-                 .build())
-        } else {
-            None
-        };
+        let content = post.content.map(
+            |v| ContentBuilder::default().value(v).content_type(Some("html".to_string())).build()
+        );
 
         EntryBuilder::default()
             .title(post.title)

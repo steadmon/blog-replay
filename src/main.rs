@@ -72,11 +72,9 @@ fn do_generate(config: &Config, gen: &Generator, db_path: &Path)
 {
     let db = sled::open(db_path)?;
     let meta_tree = db.open_tree("feed_metadata")?;
-    for meta in meta_tree.iter() {
-        if let Ok((_, val)) = meta {
-            let feed_data: FeedData = bincode::deserialize(&val)?;
-            generate_feed(config, &feed_data, gen, &db)?;
-        }
+    for (_, meta) in meta_tree.iter().flatten() {
+        let feed_data: FeedData = bincode::deserialize(&meta)?;
+        generate_feed(config, &feed_data, gen, &db)?;
     }
 
     Ok(())
