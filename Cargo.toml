@@ -3,6 +3,7 @@ name = "blog-replay"
 version = "0.1.2"
 edition = "2021"
 license = "MIT"
+description = "A utility to replay a blog's archive into an Atom feed"
 
 [dependencies]
 atom_syndication = { version = "0.11.0", features = ["with-serde"] }
