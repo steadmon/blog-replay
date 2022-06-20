@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fs::{File, Permissions};
 use std::os::unix::fs::PermissionsExt;
@@ -85,6 +86,32 @@ fn do_generate(config: &Config, gen: &Generator, db_path: &Path) -> Result<(), B
     Ok(())
 }
 
+fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<(), Box<dyn Error>> {
+    let db = sled::open(db_path)?;
+    let meta_tree = db.open_tree("feed_metadata")?;
+    for (key, meta) in meta_tree.iter().flatten() {
+        let key = String::from_utf8(key.to_vec())?;
+        if ! blogs.is_empty() && ! blogs.contains(key.as_str()) {
+            continue;
+        }
+        let feed_data: FeedData = bincode::deserialize(&meta)?;
+        let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
+        if long {
+            println!("{} \"{}\" ({}): {} posts",
+                feed_data.key, feed_data.title, feed_data.id, entry_tree.len());
+            for result in entry_tree.iter() {
+                if let Ok((_, val)) = result {
+                    let entry: Entry = bincode::deserialize(&val)?;
+                    println!("   {}", entry.title.value);
+                }
+            }
+        } else {
+            println!("{}: {} posts", feed_data.key, entry_tree.len());
+        }
+    }
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let matches = clap_app!((PROG_NAME) =>
@@ -98,6 +125,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
         )
         (@subcommand generate =>
             (about: "generates a feed for each blog in the local DB")
+        )
+        (@subcommand ls =>
+            (about: "lists blog metadata from the local DB")
+            (@arg LONG: -l --long "Also show cached post titles")
+            (@arg BLOGS: ... "Limit to the given blog key(s)")
         )
     )
     .get_matches();
@@ -124,6 +156,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await
         }
         ("generate", Some(_)) => do_generate(&config, &generator, &db_path),
+        ("ls", Some(sub_match)) => {
+            let blogs = sub_match.values_of("BLOGS")
+                .map_or_else(|| HashSet::new(), |b| b.collect());
+            do_ls(&db_path, sub_match.is_present("LONG"), &blogs)
+        }
         _ => Ok(()),
     }
 }

@@ -35,7 +35,7 @@ in
 {
   cargo2nixVersion = "0.10.0";
   workspace = {
-    blog-replay = rustPackages.unknown.blog-replay."0.1.3";
+    blog-replay = rustPackages.unknown.blog-replay."0.1.4";
   };
   "registry+https://github.com/rust-lang/crates.io-index".aho-corasick."0.7.18" = overridableMkRustCrate (profileName: rec {
     name = "aho-corasick";
@@ -112,9 +112,9 @@ in
     ];
   });
   
-  "unknown".blog-replay."0.1.3" = overridableMkRustCrate (profileName: rec {
+  "unknown".blog-replay."0.1.4" = overridableMkRustCrate (profileName: rec {
     name = "blog-replay";
-    version = "0.1.3";
+    version = "0.1.4";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
