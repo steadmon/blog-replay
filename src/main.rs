@@ -91,6 +91,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
         (about: "Replays blog archives into an Atom feed")
+        (@setting VersionlessSubcommands)
         (@subcommand scrape =>
             (about: "loads a blog's archive into the local DB for later replay")
             (@arg URL: +required "URL of the blog to scrape")
