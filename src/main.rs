@@ -37,7 +37,7 @@ async fn do_scrape(
             bincode::serialize(&entry)?,
         )?;
     }
-    // Remove the correspondng generated feed if present, so that we don't duplicate entries.
+    // Remove the corresponding generated feed if present, so that we don't duplicate entries.
     let _ = std::fs::remove_file(path_from_feed_data(config, &feed_data));
 
     // Generate this feed and tell us where it's located.
