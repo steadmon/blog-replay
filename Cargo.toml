@@ -6,6 +6,7 @@ license = "MIT"
 description = "A utility to replay a blog's archive into an Atom feed"
 
 [dependencies]
+anyhow = "1.0"
 atom_syndication = { version = "0.11.0", features = ["with-serde"] }
 bincode = "1.3"
 chrono = "0.4.19"

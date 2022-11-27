@@ -1,14 +1,11 @@
 use std::error::Error;
-use std::future::Future;
 
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::RetryIf;
 
-use super::common::{parse_datetime, sanitize_blog_key, Config, FeedData};
+use super::common::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
@@ -90,7 +87,7 @@ async fn get_blog_once(
     client: &Client,
     api_url: &Url,
     blog_url: &str,
-) -> Result<Blog, reqwest::Error> {
+) -> anyhow::Result<Blog> {
     let resp = client
         .get(api_url.clone())
         .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
@@ -105,7 +102,7 @@ async fn get_page_once(
     client: &Client,
     api_url: &Url,
     page_token: Option<&String>,
-) -> Result<ListPostsResponse, reqwest::Error> {
+) -> anyhow::Result<ListPostsResponse> {
     let req = client.get(api_url.clone()).query(&[
         ("key", &config.blogger_api_key),
         ("orderBy", &String::from("published")),
@@ -123,20 +120,6 @@ async fn get_page_once(
     Ok(resp.error_for_status()?.json().await?)
 }
 
-async fn retry_request<F, R, T>(config: &Config, action: F) -> Result<R, reqwest::Error>
-where
-    F: FnMut() -> T,
-    T: Future<Output = Result<R, reqwest::Error>>,
-{
-    RetryIf::spawn(
-        ExponentialBackoff::from_millis(500)
-            .map(jitter)
-            .take(config.max_retries),
-        action,
-        |e: &reqwest::Error| e.status().map_or(false, |s| s.is_server_error()),
-    )
-    .await
-}
 
 pub async fn get_feed(
     config: &Config,
@@ -163,17 +146,7 @@ pub async fn get_feed(
         ))?;
 
         let mut next_page_token: Option<String> = None;
-        let pb = indicatif::ProgressBar::new(blog.posts.total_items as u64);
-        pb.set_style(
-            indicatif::ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.blue} [{bar:.blue}] ({pos}/{len}) \
-                [elapsed: {elapsed_precise}, eta: {eta_precise}]",
-                )
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
-                .progress_chars("█▉▊▋▌▍▎▏  "),
-        );
-        pb.enable_steady_tick(100);
+        let pb = init_progress_bar(blog.posts.total_items as u64);
         loop {
             let mut post_resp = retry_request(config, || {
                 get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
