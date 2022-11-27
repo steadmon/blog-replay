@@ -9,6 +9,8 @@ use reqwest::Client;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::RetryIf;
 
+use super::blogger;
+
 pub use super::atom::{read_or_create_feed, FeedData};
 pub use super::config::Config;
 
@@ -50,6 +52,21 @@ where
             }
         }
     ).await
+}
+
+#[derive(Debug)]
+pub enum BlogType {
+    Blogger,
+}
+
+pub async fn detect_blog_type(config: &Config, client: &Client, blog_url: &str)
+    -> anyhow::Result<BlogType>
+{
+    if blogger::detect(config, client, blog_url).await {
+        Ok(BlogType::Blogger)
+    } else {
+        Err(anyhow::anyhow!("Could not determine blog type"))
+    }
 }
 
 pub fn init_progress_bar(len: u64) -> indicatif::ProgressBar {

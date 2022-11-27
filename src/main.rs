@@ -27,7 +27,10 @@ async fn do_scrape(
         .user_agent(USER_AGENT)
         .build()?;
 
-    let (feed_data, entries) = blogger::get_feed(config, &client, url, 1).await?;
+    let (feed_data, entries) = match detect_blog_type(config, &client, url).await? {
+        BlogType::Blogger => blogger::get_feed(config, &client, url, 1).await?,
+    };
+
     let meta_tree = db.open_tree("feed_metadata")?;
     meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;

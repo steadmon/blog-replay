@@ -120,6 +120,14 @@ async fn get_page_once(
     Ok(resp.error_for_status()?.json().await?)
 }
 
+pub async fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
+    let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl").unwrap();
+    let res = retry_request(config, || {
+        get_blog_once(config, client, &blog_api_url, blog_url)
+    }).await;
+
+    res.is_ok()
+}
 
 pub async fn get_feed(
     config: &Config,
