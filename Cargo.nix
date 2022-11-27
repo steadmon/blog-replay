@@ -35,7 +35,7 @@ in
 {
   cargo2nixVersion = "0.10.0";
   workspace = {
-    blog-replay = rustPackages.unknown.blog-replay."0.1.4";
+    blog-replay = rustPackages.unknown.blog-replay."0.1.5";
   };
   "registry+https://github.com/rust-lang/crates.io-index".aho-corasick."0.7.18" = overridableMkRustCrate (profileName: rec {
     name = "aho-corasick";
@@ -49,6 +49,17 @@ in
     dependencies = {
       memchr = rustPackages."registry+https://github.com/rust-lang/crates.io-index".memchr."2.4.1" { inherit profileName; };
     };
+  });
+  
+  "registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.58" = overridableMkRustCrate (profileName: rec {
+    name = "anyhow";
+    version = "1.0.58";
+    registry = "registry+https://github.com/rust-lang/crates.io-index";
+    src = fetchCratesIo { inherit name version; sha256 = "bb07d2053ccdbe10e2af2995a2f116c1330396493dc1269f6a91d0ae82e19704"; };
+    features = builtins.concatLists [
+      [ "default" ]
+      [ "std" ]
+    ];
   });
   
   "registry+https://github.com/rust-lang/crates.io-index".atom_syndication."0.11.0" = overridableMkRustCrate (profileName: rec {
@@ -112,12 +123,13 @@ in
     ];
   });
   
-  "unknown".blog-replay."0.1.4" = overridableMkRustCrate (profileName: rec {
+  "unknown".blog-replay."0.1.5" = overridableMkRustCrate (profileName: rec {
     name = "blog-replay";
-    version = "0.1.4";
+    version = "0.1.5";
     registry = "unknown";
     src = fetchCrateLocal workspaceSrc;
     dependencies = {
+      anyhow = rustPackages."registry+https://github.com/rust-lang/crates.io-index".anyhow."1.0.58" { inherit profileName; };
       atom_syndication = rustPackages."registry+https://github.com/rust-lang/crates.io-index".atom_syndication."0.11.0" { inherit profileName; };
       bincode = rustPackages."registry+https://github.com/rust-lang/crates.io-index".bincode."1.3.3" { inherit profileName; };
       chrono = rustPackages."registry+https://github.com/rust-lang/crates.io-index".chrono."0.4.19" { inherit profileName; };
