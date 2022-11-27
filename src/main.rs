@@ -99,11 +99,9 @@ fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<(), Box<dy
         if long {
             println!("{} \"{}\" ({}): {} posts",
                 feed_data.key, feed_data.title, feed_data.id, entry_tree.len());
-            for result in entry_tree.iter() {
-                if let Ok((_, val)) = result {
-                    let entry: Entry = bincode::deserialize(&val)?;
-                    println!("   {}", entry.title.value);
-                }
+            for (_, val) in entry_tree.iter().flatten() {
+                let entry: Entry = bincode::deserialize(&val)?;
+                println!("   {}", entry.title.value);
             }
         } else {
             println!("{}: {} posts", feed_data.key, entry_tree.len());
@@ -158,7 +156,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ("generate", Some(_)) => do_generate(&config, &generator, &db_path),
         ("ls", Some(sub_match)) => {
             let blogs = sub_match.values_of("BLOGS")
-                .map_or_else(|| HashSet::new(), |b| b.collect());
+                .map_or_else(HashSet::new, |b| b.collect());
             do_ls(&db_path, sub_match.is_present("LONG"), &blogs)
         }
         _ => Ok(()),
