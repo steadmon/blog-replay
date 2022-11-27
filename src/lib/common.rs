@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset, Offset, Utc};
+use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, Utc};
 use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -10,6 +10,7 @@ use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::RetryIf;
 
 use super::blogger;
+use super::wordpress;
 
 pub use super::atom::{read_or_create_feed, FeedData};
 pub use super::config::Config;
@@ -18,6 +19,12 @@ pub fn parse_datetime(s: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::<FixedOffset>::parse_from_rfc3339(s)
         .ok()
         .map(|d| d.with_timezone(&Utc.fix()))
+}
+
+pub fn parse_assuming_utc(s: &str) -> Option<DateTime<FixedOffset>> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .map(|d| DateTime::<Utc>::from_utc(d, Utc).with_timezone(&Utc.fix()))
 }
 
 pub fn path_from_feed_data(config: &Config, f: &FeedData) -> PathBuf {
@@ -57,12 +64,15 @@ where
 #[derive(Debug)]
 pub enum BlogType {
     Blogger,
+    Wordpress,
 }
 
 pub async fn detect_blog_type(config: &Config, client: &Client, blog_url: &str)
     -> anyhow::Result<BlogType>
 {
-    if blogger::detect(config, client, blog_url).await {
+    if wordpress::detect(config, client, blog_url).await {
+        Ok(BlogType::Wordpress)
+    } else if blogger::detect(config, client, blog_url).await {
         Ok(BlogType::Blogger)
     } else {
         Err(anyhow::anyhow!("Could not determine blog type"))

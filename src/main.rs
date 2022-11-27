@@ -11,6 +11,7 @@ use clap::clap_app;
 mod lib;
 use lib::blogger;
 use lib::common::*;
+use lib::wordpress;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -29,6 +30,7 @@ async fn do_scrape(
 
     let (feed_data, entries) = match detect_blog_type(config, &client, url).await? {
         BlogType::Blogger => blogger::get_feed(config, &client, url, 1).await?,
+        BlogType::Wordpress => wordpress::get_feed(config, &client, url).await?,
     };
 
     let meta_tree = db.open_tree("feed_metadata")?;
