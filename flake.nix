@@ -1,31 +1,21 @@
 {
   description = "A utility to replay a blog's archive into an Atom feed";
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs?ref=release-21.05";
-    cargo2nix.url = "github:cargo2nix/cargo2nix/master";
+    naersk.url = "github:nix-community/naersk";
     rust-overlay.url = "github:oxalica/rust-overlay";
-    rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
-    rust-overlay.inputs.flake-utils.follows = "flake-utils";
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-utils.follows = "rust-overlay/flake-utils";
+    nixpkgs.follows = "rust-overlay/nixpkgs";
   };
 
-  outputs = { self, nixpkgs, cargo2nix, flake-utils, rust-overlay, ... }:
+  outputs = inputs: with inputs;
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [(import "${cargo2nix}/overlay")
-                      rust-overlay.overlay];
-        };
-
-        rustPkgs = pkgs.rustBuilder.makePackageSet' {
-          rustChannel = "1.58.1";
-          packageFun = import ./Cargo.nix;
-        };
-
+        pkgs = nixpkgs.legacyPackages.${system};
+        code = pkgs.callPackage ./. { inherit pkgs naersk; };
       in rec {
         packages = {
-          blog-replay = (rustPkgs.workspace.blog-replay {}).bin;
+          blog-replay = code.blog-replay;
+          default = packages.blog-replay;
         };
 
         defaultPackage = packages.blog-replay;
