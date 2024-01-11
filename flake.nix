@@ -1,10 +1,11 @@
 {
   description = "A utility to replay a blog's archive into an Atom feed";
   inputs = {
-    naersk.url = "github:nix-community/naersk";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-utils.follows = "rust-overlay/flake-utils";
     nixpkgs.follows = "rust-overlay/nixpkgs";
+    naersk.url = "github:nix-community/naersk";
+    naersk.inputs.nixpkgs.follows = "rust-overlay/nixpkgs";
   };
 
   outputs = inputs: with inputs;
