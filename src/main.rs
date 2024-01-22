@@ -8,10 +8,11 @@ use atom_syndication::{Entry, Generator};
 use chrono::Utc;
 use clap::clap_app;
 
-mod lib;
-use lib::blogger;
-use lib::common::*;
-use lib::wordpress;
+mod blogger;
+mod common;
+mod wordpress;
+
+use common::*;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");

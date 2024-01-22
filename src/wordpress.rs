@@ -5,7 +5,7 @@ use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person}
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
-use super::common::*;
+use crate::common::*;
 
 #[derive(Deserialize, Debug)]
 struct Blog {

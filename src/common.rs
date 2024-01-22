@@ -9,11 +9,14 @@ use reqwest::Client;
 use tokio_retry::strategy::{jitter, ExponentialBackoff};
 use tokio_retry::RetryIf;
 
-use super::blogger;
-use super::wordpress;
+use crate::blogger;
+use crate::wordpress;
 
-pub use super::atom::{read_or_create_feed, FeedData};
-pub use super::config::Config;
+mod atom;
+mod config;
+
+pub use atom::{read_or_create_feed, FeedData};
+pub use config::Config;
 
 pub fn parse_datetime(s: &str) -> Option<DateTime<FixedOffset>> {
     DateTime::<FixedOffset>::parse_from_rfc3339(s)

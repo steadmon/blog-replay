@@ -5,7 +5,7 @@ use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use tokio::time::{sleep, Duration};
 
-use super::common::*;
+use crate::common::*;
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Blog {
