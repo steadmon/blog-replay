@@ -1,9 +1,9 @@
 use std::error::Error;
 
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
-use reqwest::{Client, Url};
+use reqwest::Url;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use tokio::time::{sleep, Duration};
 
 use crate::common::*;
 
@@ -82,7 +82,7 @@ struct ListPostsResponse {
     items: Vec<Post>,
 }
 
-async fn get_blog_once(
+fn get_blog_once(
     config: &Config,
     client: &Client,
     api_url: &Url,
@@ -91,13 +91,12 @@ async fn get_blog_once(
     let resp = client
         .get(api_url.clone())
         .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
-        .send()
-        .await?;
+        .send()?;
 
-    Ok(resp.error_for_status()?.json().await?)
+    Ok(resp.error_for_status()?.json()?)
 }
 
-async fn get_page_once(
+fn get_page_once(
     config: &Config,
     client: &Client,
     api_url: &Url,
@@ -115,21 +114,21 @@ async fn get_page_once(
         req
     };
 
-    let resp = req.send().await?;
+    let resp = req.send()?;
 
-    Ok(resp.error_for_status()?.json().await?)
+    Ok(resp.error_for_status()?.json()?)
 }
 
-pub async fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
+pub fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
     let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl").unwrap();
     let res = retry_request(config, || {
         get_blog_once(config, client, &blog_api_url, blog_url)
-    }).await;
+    });
 
     res.is_ok()
 }
 
-pub async fn get_feed(
+pub fn get_feed(
     config: &Config,
     client: &Client,
     blog_url: &str,
@@ -140,8 +139,7 @@ pub async fn get_feed(
     let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
     let blog = retry_request(config, || {
         get_blog_once(config, client, &blog_api_url, blog_url)
-    })
-    .await?;
+    })?;
 
     println!(
         r#"Scraping "{}" ({} posts, {} pages)"#,
@@ -158,8 +156,7 @@ pub async fn get_feed(
         loop {
             let mut post_resp = retry_request(config, || {
                 get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
-            })
-            .await?;
+            })?;
             pb.inc(post_resp.items.len().try_into().unwrap());
             posts.append(&mut post_resp.items);
 
@@ -169,7 +166,7 @@ pub async fn get_feed(
             }
 
             if delay > 0 {
-                sleep(Duration::from_secs(delay)).await;
+                std::thread::sleep(std::time::Duration::from_secs(delay));
             }
         }
         pb.finish()
@@ -182,8 +179,7 @@ pub async fn get_feed(
         ))?;
         let mut page_resp = retry_request(config, || {
             get_page_once(config, client, &pages_api_url, None)
-        })
-        .await?;
+        })?;
         posts.append(&mut page_resp.items);
     }
 

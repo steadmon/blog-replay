@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::error::Error;
 
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
-use reqwest::{Client, Url};
+use reqwest::Url;
+use reqwest::blocking::Client;
 use serde::Deserialize;
 
 use crate::common::*;
@@ -60,26 +61,24 @@ fn post_to_entry(post: &Post, blog_id: &str, author_map: &HashMap<usize, String>
         .build()
 }
 
-async fn get_blog_once(client: &Client, api_url: &Url) -> anyhow::Result<Blog> {
+fn get_blog_once(client: &Client, api_url: &Url) -> anyhow::Result<Blog> {
     let resp = client
         .get(api_url.clone())
-        .send()
-        .await?;
+        .send()?;
 
-    Ok(resp.error_for_status()?.json().await?)
+    Ok(resp.error_for_status()?.json()?)
 }
 
-async fn get_users_once(client: &Client, api_url: &Url) -> anyhow::Result<HashMap<usize, String>> {
+fn get_users_once(client: &Client, api_url: &Url) -> anyhow::Result<HashMap<usize, String>> {
     let resp = client
         .get(api_url.clone())
-        .send()
-        .await?;
+        .send()?;
 
-    let mut users: Vec<User> = resp.error_for_status()?.json().await?;
+    let mut users: Vec<User> = resp.error_for_status()?.json()?;
     Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
 }
 
-async fn get_page_once(
+fn get_page_once(
     client: &Client,
     api_url: &Url,
     page: usize,
@@ -88,7 +87,7 @@ async fn get_page_once(
         .get(api_url.clone())
         .query(&[("page", &format!("{page}"))]);
 
-    let resp = req.send().await?.error_for_status()?;
+    let resp = req.send()?.error_for_status()?;
 
     let items = resp
         .headers()
@@ -102,24 +101,24 @@ async fn get_page_once(
         .ok_or_else(|| anyhow::anyhow!("Missing expected X-WP-TotalPages header"))?
         .to_str()?
         .parse::<usize>()?;
-    let posts = resp.json().await?;
+    let posts = resp.json()?;
 
     Ok((posts, items, pages))
 }
 
-pub async fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
+pub fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
     // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
     // this doesn't seem to be enabled on all sites.
     // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
     let blog_api_url = Url::parse(format!("{blog_url}/wp-json/").as_str()).unwrap();
     let res = retry_request(config, || {
         get_blog_once(client, &blog_api_url)
-    }).await;
+    });
 
     res.is_ok()
 }
 
-pub async fn get_feed(
+pub fn get_feed(
     config: &Config,
     client: &Client,
     blog_url: &str,
@@ -129,15 +128,13 @@ pub async fn get_feed(
     let blog_api_url = Url::parse(&format!("{blog_url}/wp-json/"))?;
     let blog = retry_request(config, || {
         get_blog_once(client, &blog_api_url)
-    })
-    .await?;
+    })?;
 
     // Get author map
     let users_api_url = Url::parse(&format!("{blog_url}/wp-json/wp/v2/users"))?;
     let authors = retry_request(config, || {
         get_users_once(client, &users_api_url)
-    })
-    .await?;
+    })?;
 
     // Get # api pages & # items
     let posts_api_url = Url::parse(&format!("{blog_url}/wp-json/wp/v2/posts"))?;
@@ -146,7 +143,7 @@ pub async fn get_feed(
     loop {
         let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
             get_page_once(client, &posts_api_url, api_page)
-        }).await?;
+        })?;
         if api_page == 1 {
             println!(r#"Scraping "{}" ({} posts)"#, blog.name, num_posts);
             pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
@@ -168,7 +165,7 @@ pub async fn get_feed(
     loop {
         let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
             get_page_once(client, &posts_api_url, api_page)
-        }).await?;
+        })?;
         if api_page == 1 {
             println!(r#"Scraping "{}" ({} pages)"#, blog.name, num_posts);
             pb = Some(init_progress_bar(num_posts.try_into().unwrap()));

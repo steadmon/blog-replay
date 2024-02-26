@@ -18,20 +18,20 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-async fn do_scrape(
+fn do_scrape(
     url: &str,
     config: &Config,
     gen: &Generator,
     db_path: &Path,
 ) -> Result<(), Box<dyn Error>> {
     let db = sled::open(db_path)?;
-    let client = reqwest::ClientBuilder::new()
+    let client = reqwest::blocking::ClientBuilder::new()
         .user_agent(USER_AGENT)
         .build()?;
 
-    let (feed_data, entries) = match detect_blog_type(config, &client, url).await? {
-        BlogType::Blogger => blogger::get_feed(config, &client, url, 1).await?,
-        BlogType::Wordpress => wordpress::get_feed(config, &client, url).await?,
+    let (feed_data, entries) = match detect_blog_type(config, &client, url)? {
+        BlogType::Blogger => blogger::get_feed(config, &client, url, 1)?,
+        BlogType::Wordpress => wordpress::get_feed(config, &client, url)?,
     };
 
     let meta_tree = db.open_tree("feed_metadata")?;
@@ -116,8 +116,7 @@ fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<(), Box<dy
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     let matches = clap_app!((PROG_NAME) =>
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
@@ -157,7 +156,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 &generator,
                 &db_path,
             )
-            .await
         }
         ("generate", Some(_)) => do_generate(&config, &generator, &db_path),
         ("ls", Some(sub_match)) => {

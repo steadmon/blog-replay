@@ -1,13 +1,10 @@
-use std::future::Future;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, Utc};
 use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::Client;
-use tokio_retry::strategy::{jitter, ExponentialBackoff};
-use tokio_retry::RetryIf;
+use reqwest::blocking::Client;
 
 use crate::blogger;
 use crate::wordpress;
@@ -45,23 +42,30 @@ pub fn sanitize_blog_key(s: &str) -> String {
         .into_owned()
 }
 
-pub async fn retry_request<F, R, T>(config: &Config, action: F) -> anyhow::Result<R>
+pub fn retry_request<F, R>(config: &Config, mut action: F) -> anyhow::Result<R>
 where
-    F: FnMut() -> T,
-    T: Future<Output = anyhow::Result<R>>,
+    F: FnMut() -> anyhow::Result<R>
 {
-    RetryIf::spawn(
-        ExponentialBackoff::from_millis(500)
-            .map(jitter)
-            .take(config.max_retries),
-        action,
-        |e: &anyhow::Error| {
-            match e.downcast_ref::<reqwest::Error>() {
-                Some(re) => re.status().map_or(false, |s| s.is_server_error()),
-                None => false,
+    let base_backoff_millis = 500u64;
+    let mut ret = Err(anyhow::anyhow!("max_retries must be greater than zero"));
+
+    for i in 0 .. config.max_retries {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(
+                    base_backoff_millis.pow(i.try_into().unwrap())
+            ));
+        }
+        ret = action();
+        if let Err(ref e) = ret {
+            if let Some(re) = e.downcast_ref::<reqwest::Error>() {
+                if re.status().map_or(false, |s| s.is_server_error()) {
+                    continue;
+                }
             }
         }
-    ).await
+        break;
+    }
+    ret
 }
 
 #[derive(Debug)]
@@ -70,12 +74,12 @@ pub enum BlogType {
     Wordpress,
 }
 
-pub async fn detect_blog_type(config: &Config, client: &Client, blog_url: &str)
+pub fn detect_blog_type(config: &Config, client: &Client, blog_url: &str)
     -> anyhow::Result<BlogType>
 {
-    if wordpress::detect(config, client, blog_url).await {
+    if wordpress::detect(config, client, blog_url) {
         Ok(BlogType::Wordpress)
-    } else if blogger::detect(config, client, blog_url).await {
+    } else if blogger::detect(config, client, blog_url) {
         Ok(BlogType::Blogger)
     } else {
         Err(anyhow::anyhow!("Could not determine blog type"))
