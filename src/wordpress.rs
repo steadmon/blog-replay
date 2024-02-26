@@ -8,8 +8,9 @@ use serde::Deserialize;
 
 use crate::common::*;
 
+// Parsed from Wordpress API endpoint
 #[derive(Deserialize, Debug)]
-struct Blog {
+struct WordpressJson {
     name: String,
     home: String,
 }
@@ -61,7 +62,7 @@ fn post_to_entry(post: &Post, blog_id: &str, author_map: &HashMap<usize, String>
         .build()
 }
 
-fn get_blog_once(client: &Client, api_url: &Url) -> anyhow::Result<Blog> {
+fn get_blog_once(client: &Client, api_url: &Url) -> anyhow::Result<WordpressJson> {
     let resp = client
         .get(api_url.clone())
         .send()?;

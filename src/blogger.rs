@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::*;
 
+// Parsed from Blogger API endpoint
 #[derive(Serialize, Deserialize, Debug)]
-struct Blog {
+struct BloggerJson {
     id: String,
     name: String,
     description: String,
@@ -87,7 +88,7 @@ fn get_blog_once(
     client: &Client,
     api_url: &Url,
     blog_url: &str,
-) -> anyhow::Result<Blog> {
+) -> anyhow::Result<BloggerJson> {
     let resp = client
         .get(api_url.clone())
         .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
