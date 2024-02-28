@@ -4,15 +4,13 @@ use chrono::{DateTime, FixedOffset, NaiveDateTime, Offset, Utc};
 use convert_case::{Case, Casing};
 use lazy_static::lazy_static;
 use regex::Regex;
-use reqwest::blocking::Client;
-
-use crate::blogger;
-use crate::wordpress;
 
 mod atom;
+mod blog;
 mod config;
 
 pub use atom::{read_or_create_feed, FeedData};
+pub use blog::*;
 pub use config::Config;
 
 pub fn parse_datetime(s: &str) -> Option<DateTime<FixedOffset>> {
@@ -66,24 +64,6 @@ where
         break;
     }
     ret
-}
-
-#[derive(Debug)]
-pub enum BlogType {
-    Blogger,
-    Wordpress,
-}
-
-pub fn detect_blog_type(config: &Config, client: &Client, blog_url: &str)
-    -> anyhow::Result<BlogType>
-{
-    if wordpress::detect(config, client, blog_url) {
-        Ok(BlogType::Wordpress)
-    } else if blogger::detect(config, client, blog_url) {
-        Ok(BlogType::Blogger)
-    } else {
-        Err(anyhow::anyhow!("Could not determine blog type"))
-    }
 }
 
 pub fn init_progress_bar(len: u64) -> indicatif::ProgressBar {

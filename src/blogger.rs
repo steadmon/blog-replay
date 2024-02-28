@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::Url;
 use reqwest::blocking::Client;
@@ -16,6 +14,26 @@ struct BloggerJson {
     url: String,
     posts: ItemSummary,
     pages: ItemSummary,
+}
+
+struct BloggerBlog {
+    api_json: BloggerJson,
+}
+
+impl Blog for BloggerBlog {
+    fn blog_type(&self) -> BlogType {
+        BlogType::Blogger
+    }
+
+    fn feed_data(&self, config: &Config) -> FeedData {
+        let key = sanitize_blog_key(&self.api_json.name);
+        FeedData {
+            id: format!("{}/{}", config.feed_url_base, key),
+            key,
+            title: self.api_json.name.clone(),
+            url: self.api_json.url.clone(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -120,13 +138,13 @@ fn get_page_once(
     Ok(resp.error_for_status()?.json()?)
 }
 
-pub fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
+pub fn get_blog(config: &Config, client: &Client, url: &str) -> anyhow::Result<Box<dyn Blog>> {
     let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl").unwrap();
-    let res = retry_request(config, || {
-        get_blog_once(config, client, &blog_api_url, blog_url)
-    });
+    let api_json = retry_request(config, || {
+        get_blog_once(config, client, &blog_api_url, url)
+    })?;
 
-    res.is_ok()
+    Ok(Box::new(BloggerBlog { api_json }))
 }
 
 pub fn get_feed(
@@ -134,7 +152,7 @@ pub fn get_feed(
     client: &Client,
     blog_url: &str,
     delay: u64,
-) -> Result<(FeedData, Vec<Entry>), Box<dyn Error>> {
+) -> anyhow::Result<Vec<Entry>> {
     let mut posts: Vec<Post> = Vec::new();
 
     let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
@@ -193,13 +211,5 @@ pub fn get_feed(
         post.id = format!("{}/{}", blog_id, post.id);
     }
 
-    Ok((
-        FeedData {
-            id: blog_id,
-            key: blog_key,
-            title: blog.name,
-            url: blog.url,
-        },
-        posts.into_iter().map(|p| p.into()).collect::<Vec<Entry>>(),
-    ))
+    Ok(posts.into_iter().map(|p| p.into()).collect())
 }

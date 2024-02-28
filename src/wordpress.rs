@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::error::Error;
 
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::Url;
@@ -13,6 +12,26 @@ use crate::common::*;
 struct WordpressJson {
     name: String,
     home: String,
+}
+
+struct WordpressBlog {
+    api_json: WordpressJson,
+}
+
+impl Blog for WordpressBlog {
+    fn blog_type(&self) -> BlogType {
+        BlogType::Wordpress
+    }
+
+    fn feed_data(&self, config: &Config) -> FeedData {
+        let key = sanitize_blog_key(&self.api_json.name);
+        FeedData {
+            id: format!("{}/{}", config.feed_url_base, key),
+            key,
+            title: self.api_json.name.clone(),
+            url: self.api_json.home.clone(),
+        }
+    }
 }
 
 
@@ -107,23 +126,25 @@ fn get_page_once(
     Ok((posts, items, pages))
 }
 
-pub fn detect(config: &Config, client: &Client, blog_url: &str) -> bool {
+pub fn get_blog(config: &Config, client: &Client, blog_url: &str)
+    -> anyhow::Result<Box<dyn Blog>>
+{
     // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
     // this doesn't seem to be enabled on all sites.
     // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
     let blog_api_url = Url::parse(format!("{blog_url}/wp-json/").as_str()).unwrap();
-    let res = retry_request(config, || {
+    let api_json = retry_request(config, || {
         get_blog_once(client, &blog_api_url)
-    });
+    })?;
 
-    res.is_ok()
+    Ok(Box::new(WordpressBlog { api_json }))
 }
 
 pub fn get_feed(
     config: &Config,
     client: &Client,
     blog_url: &str,
-) -> Result<(FeedData, Vec<Entry>), Box<dyn Error>> {
+) -> anyhow::Result<Vec<Entry>> {
     let mut posts: Vec<Post> = Vec::new();
 
     let blog_api_url = Url::parse(&format!("{blog_url}/wp-json/"))?;
@@ -183,12 +204,5 @@ pub fn get_feed(
 
     let blog_key = sanitize_blog_key(&blog.name);
     let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
-    let feed_data = FeedData {
-        id: blog_id.clone(),
-        key: blog_key,
-        title: blog.name,
-        url: blog.home,
-    };
-    let entries: Vec<Entry> = posts.iter().map(|p| post_to_entry(p, &blog_id, &authors)).collect();
-    Ok((feed_data, entries))
+    Ok(posts.iter().map(|p| post_to_entry(p, &blog_id, &authors)).collect())
 }

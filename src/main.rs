@@ -29,7 +29,10 @@ fn do_scrape(
         .user_agent(USER_AGENT)
         .build()?;
 
-    let (feed_data, entries) = match detect_blog_type(config, &client, url)? {
+    let blog = common::get_blog(config, &client, url)?;
+    let feed_data = blog.feed_data(config);
+
+    let entries = match blog.blog_type() {
         BlogType::Blogger => blogger::get_feed(config, &client, url, 1)?,
         BlogType::Wordpress => wordpress::get_feed(config, &client, url)?,
     };
