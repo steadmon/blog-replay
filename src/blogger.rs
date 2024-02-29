@@ -1,6 +1,7 @@
+use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
-use reqwest::Url;
 use reqwest::blocking::Client;
+use reqwest::Url;
 use serde::{Deserialize, Serialize};
 
 use crate::common::*;
@@ -18,6 +19,29 @@ struct BloggerJson {
 
 struct BloggerBlog {
     api_json: BloggerJson,
+    posts_api_url: Url,
+}
+
+pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn Blog>> {
+    let api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
+    let api_json: BloggerJson = retry_request(config, || {
+        Ok(client
+               .get(api_url.clone())
+               .query(&[("url", url), ("key", &config.blogger_api_key)])
+               .send()?
+               .error_for_status()?
+               .json()?)
+    })?;
+
+    let posts_api_url = Url::parse(&format!(
+        "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
+        api_json.id
+    ))?;
+
+    Ok(Box::new(BloggerBlog {
+        api_json,
+        posts_api_url,
+    }))
 }
 
 impl Blog for BloggerBlog {
@@ -33,6 +57,55 @@ impl Blog for BloggerBlog {
             title: self.api_json.name.clone(),
             url: self.api_json.url.clone(),
         }
+    }
+
+    fn entries(&self, config: &Config, client: &Client) -> Result<Vec<Entry>> {
+        let mut posts: Vec<Post> = Vec::new();
+
+        println!(
+            r#"Scraping "{}" ({} posts, {} pages)"#,
+            &self.api_json.name, self.api_json.posts.total_items, self.api_json.pages.total_items
+        );
+        if self.api_json.posts.total_items > 0 {
+            let mut next_page_token: Option<String> = None;
+            let pb = init_progress_bar(self.api_json.posts.total_items as u64);
+            loop {
+                let mut post_resp = retry_request(config, || {
+                    get_page_once(config, client, &self.posts_api_url, next_page_token.as_ref())
+                })?;
+                pb.inc(post_resp.items.len().try_into().unwrap());
+                posts.append(&mut post_resp.items);
+
+                next_page_token = post_resp.next_page_token.take();
+                if next_page_token.is_none() {
+                    break;
+                }
+
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            pb.finish()
+        }
+
+        if self.api_json.pages.total_items > 0 {
+            let pages_api_url = Url::parse(&format!(
+                "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
+                self.api_json.id
+            ))?;
+            let mut page_resp =
+                retry_request(config, || get_page_once(config, client, &pages_api_url, None))?;
+            posts.append(&mut page_resp.items);
+        }
+
+        // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
+
+        // Add our prefix to Blogger's post IDs
+        let blog_key = sanitize_blog_key(&self.api_json.name);
+        let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
+        for post in &mut posts {
+            post.id = format!("{}/{}", blog_id, post.id);
+        }
+
+        Ok(posts.into_iter().map(|p| p.into()).collect())
     }
 }
 
@@ -101,26 +174,12 @@ struct ListPostsResponse {
     items: Vec<Post>,
 }
 
-fn get_blog_once(
-    config: &Config,
-    client: &Client,
-    api_url: &Url,
-    blog_url: &str,
-) -> anyhow::Result<BloggerJson> {
-    let resp = client
-        .get(api_url.clone())
-        .query(&[("url", blog_url), ("key", &config.blogger_api_key)])
-        .send()?;
-
-    Ok(resp.error_for_status()?.json()?)
-}
-
 fn get_page_once(
     config: &Config,
     client: &Client,
     api_url: &Url,
     page_token: Option<&String>,
-) -> anyhow::Result<ListPostsResponse> {
+) -> Result<ListPostsResponse> {
     let req = client.get(api_url.clone()).query(&[
         ("key", &config.blogger_api_key),
         ("orderBy", &String::from("published")),
@@ -136,80 +195,4 @@ fn get_page_once(
     let resp = req.send()?;
 
     Ok(resp.error_for_status()?.json()?)
-}
-
-pub fn get_blog(config: &Config, client: &Client, url: &str) -> anyhow::Result<Box<dyn Blog>> {
-    let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl").unwrap();
-    let api_json = retry_request(config, || {
-        get_blog_once(config, client, &blog_api_url, url)
-    })?;
-
-    Ok(Box::new(BloggerBlog { api_json }))
-}
-
-pub fn get_feed(
-    config: &Config,
-    client: &Client,
-    blog_url: &str,
-    delay: u64,
-) -> anyhow::Result<Vec<Entry>> {
-    let mut posts: Vec<Post> = Vec::new();
-
-    let blog_api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
-    let blog = retry_request(config, || {
-        get_blog_once(config, client, &blog_api_url, blog_url)
-    })?;
-
-    println!(
-        r#"Scraping "{}" ({} posts, {} pages)"#,
-        blog.name, blog.posts.total_items, blog.pages.total_items
-    );
-    if blog.posts.total_items > 0 {
-        let posts_api_url = Url::parse(&format!(
-            "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
-            blog.id
-        ))?;
-
-        let mut next_page_token: Option<String> = None;
-        let pb = init_progress_bar(blog.posts.total_items as u64);
-        loop {
-            let mut post_resp = retry_request(config, || {
-                get_page_once(config, client, &posts_api_url, next_page_token.as_ref())
-            })?;
-            pb.inc(post_resp.items.len().try_into().unwrap());
-            posts.append(&mut post_resp.items);
-
-            next_page_token = post_resp.next_page_token.take();
-            if next_page_token.is_none() {
-                break;
-            }
-
-            if delay > 0 {
-                std::thread::sleep(std::time::Duration::from_secs(delay));
-            }
-        }
-        pb.finish()
-    }
-
-    if blog.pages.total_items > 0 {
-        let pages_api_url = Url::parse(&format!(
-            "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
-            blog.id
-        ))?;
-        let mut page_resp = retry_request(config, || {
-            get_page_once(config, client, &pages_api_url, None)
-        })?;
-        posts.append(&mut page_resp.items);
-    }
-
-    // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
-
-    // Add our prefix to Blogger's post IDs
-    let blog_key = sanitize_blog_key(&blog.name);
-    let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
-    for post in &mut posts {
-        post.id = format!("{}/{}", blog_id, post.id);
-    }
-
-    Ok(posts.into_iter().map(|p| p.into()).collect())
 }

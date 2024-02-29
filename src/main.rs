@@ -31,11 +31,7 @@ fn do_scrape(
 
     let blog = common::get_blog(config, &client, url)?;
     let feed_data = blog.feed_data(config);
-
-    let entries = match blog.blog_type() {
-        BlogType::Blogger => blogger::get_feed(config, &client, url, 1)?,
-        BlogType::Wordpress => wordpress::get_feed(config, &client, url)?,
-    };
+    let entries = blog.entries(config, &client)?;
 
     let meta_tree = db.open_tree("feed_metadata")?;
     meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;

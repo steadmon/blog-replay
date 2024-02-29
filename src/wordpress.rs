@@ -14,8 +14,30 @@ struct WordpressJson {
     home: String,
 }
 
+pub fn get_blog(config: &Config, client: &Client, url: &str)
+    -> anyhow::Result<Box<dyn Blog>>
+{
+    // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
+    // this doesn't seem to be enabled on all sites.
+    // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
+    let api_url = Url::parse(format!("{url}/wp-json/").as_str())?;
+    let api_json = retry_request(config, || {
+        get_blog_once(client, &api_url)
+    })?;
+
+    Ok(Box::new(WordpressBlog {
+        api_json,
+        users_api_url: api_url.join("wp/v2/users")?,
+        posts_api_url: api_url.join("wp/v2/posts")?,
+        pages_api_url: api_url.join("wp/v2/pages")?,
+    }))
+}
+
 struct WordpressBlog {
     api_json: WordpressJson,
+    users_api_url: Url,
+    posts_api_url: Url,
+    pages_api_url: Url,
 }
 
 impl Blog for WordpressBlog {
@@ -31,6 +53,61 @@ impl Blog for WordpressBlog {
             title: self.api_json.name.clone(),
             url: self.api_json.home.clone(),
         }
+    }
+
+    fn entries(&self, config: &Config, client: &Client) -> anyhow::Result<Vec<Entry>> {
+        let mut posts: Vec<Post> = Vec::new();
+
+        // Get author map
+        let authors = retry_request(config, || {
+            get_users_once(client, &self.users_api_url)
+        })?;
+
+        // Get # api pages & # items
+        let mut api_page = 1;
+        let mut pb: Option<indicatif::ProgressBar> = None;
+        loop {
+            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
+                get_page_once(client, &self.posts_api_url, api_page)
+            })?;
+            if api_page == 1 {
+                println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
+                pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
+            }
+            if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
+            posts.append(&mut tmp_posts);
+            if api_page == num_api_pages || posts.len() == num_posts {
+                break;
+            }
+
+            api_page += 1;
+        }
+        if let Some(pb) = pb { pb.finish() };
+
+        // Repeat for posts vs. pages
+        api_page = 1;
+        pb = None;
+        loop {
+            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
+                get_page_once(client, &self.pages_api_url, api_page)
+            })?;
+            if api_page == 1 {
+                println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);
+                pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
+            }
+            if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
+            posts.append(&mut tmp_posts);
+            if api_page == num_api_pages || posts.len() == num_posts {
+                break;
+            }
+
+            api_page += 1;
+        }
+        if let Some(pb) = pb { pb.finish() };
+
+        let blog_key = sanitize_blog_key(&self.api_json.name);
+        let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
+        Ok(posts.iter().map(|p| post_to_entry(p, &blog_id, &authors)).collect())
     }
 }
 
@@ -124,85 +201,4 @@ fn get_page_once(
     let posts = resp.json()?;
 
     Ok((posts, items, pages))
-}
-
-pub fn get_blog(config: &Config, client: &Client, blog_url: &str)
-    -> anyhow::Result<Box<dyn Blog>>
-{
-    // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
-    // this doesn't seem to be enabled on all sites.
-    // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
-    let blog_api_url = Url::parse(format!("{blog_url}/wp-json/").as_str()).unwrap();
-    let api_json = retry_request(config, || {
-        get_blog_once(client, &blog_api_url)
-    })?;
-
-    Ok(Box::new(WordpressBlog { api_json }))
-}
-
-pub fn get_feed(
-    config: &Config,
-    client: &Client,
-    blog_url: &str,
-) -> anyhow::Result<Vec<Entry>> {
-    let mut posts: Vec<Post> = Vec::new();
-
-    let blog_api_url = Url::parse(&format!("{blog_url}/wp-json/"))?;
-    let blog = retry_request(config, || {
-        get_blog_once(client, &blog_api_url)
-    })?;
-
-    // Get author map
-    let users_api_url = Url::parse(&format!("{blog_url}/wp-json/wp/v2/users"))?;
-    let authors = retry_request(config, || {
-        get_users_once(client, &users_api_url)
-    })?;
-
-    // Get # api pages & # items
-    let posts_api_url = Url::parse(&format!("{blog_url}/wp-json/wp/v2/posts"))?;
-    let mut api_page = 1;
-    let mut pb: Option<indicatif::ProgressBar> = None;
-    loop {
-        let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
-            get_page_once(client, &posts_api_url, api_page)
-        })?;
-        if api_page == 1 {
-            println!(r#"Scraping "{}" ({} posts)"#, blog.name, num_posts);
-            pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-        }
-        if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-        posts.append(&mut tmp_posts);
-        if api_page == num_api_pages || posts.len() == num_posts {
-            break;
-        }
-
-        api_page += 1;
-    }
-    if let Some(pb) = pb { pb.finish() };
-
-    // Repeat for posts vs. pages
-    let posts_api_url = Url::parse(&format!("{blog_url}/wp-json/wp/v2/pages"))?;
-    let mut api_page = 1;
-    let mut pb: Option<indicatif::ProgressBar> = None;
-    loop {
-        let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
-            get_page_once(client, &posts_api_url, api_page)
-        })?;
-        if api_page == 1 {
-            println!(r#"Scraping "{}" ({} pages)"#, blog.name, num_posts);
-            pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-        }
-        if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-        posts.append(&mut tmp_posts);
-        if api_page == num_api_pages || posts.len() == num_posts {
-            break;
-        }
-
-        api_page += 1;
-    }
-    if let Some(pb) = pb { pb.finish() };
-
-    let blog_key = sanitize_blog_key(&blog.name);
-    let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
-    Ok(posts.iter().map(|p| post_to_entry(p, &blog_id, &authors)).collect())
 }
