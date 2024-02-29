@@ -30,7 +30,7 @@ fn do_scrape(
         .build()?;
 
     let blog = common::get_blog(config, &client, url)?;
-    let feed_data = blog.feed_data(config);
+    let feed_data = blog.feed_data();
     let entries = blog.entries(config, &client)?;
 
     let meta_tree = db.open_tree("feed_metadata")?;

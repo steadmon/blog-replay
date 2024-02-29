@@ -14,7 +14,7 @@ pub enum BlogType {
 pub trait Blog {
     fn blog_type(&self) -> BlogType;
 
-    fn feed_data(&self, config: &Config) -> FeedData;
+    fn feed_data(&self) -> FeedData;
 
     fn entries(&self, config: &Config, client: &Client) -> Result<Vec<Entry>>;
 }

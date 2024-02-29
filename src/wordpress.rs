@@ -25,11 +25,15 @@ pub fn get_blog(config: &Config, client: &Client, url: &str)
         get_blog_once(client, &api_url)
     })?;
 
+    let key = sanitize_blog_key(&api_json.name);
+    let feed_id = format!("{}/{}", config.feed_url_base, key);
     Ok(Box::new(WordpressBlog {
         api_json,
         users_api_url: api_url.join("wp/v2/users")?,
         posts_api_url: api_url.join("wp/v2/posts")?,
         pages_api_url: api_url.join("wp/v2/pages")?,
+        key,
+        feed_id,
     }))
 }
 
@@ -38,6 +42,8 @@ struct WordpressBlog {
     users_api_url: Url,
     posts_api_url: Url,
     pages_api_url: Url,
+    key: String,
+    feed_id: String,
 }
 
 impl Blog for WordpressBlog {
@@ -45,11 +51,10 @@ impl Blog for WordpressBlog {
         BlogType::Wordpress
     }
 
-    fn feed_data(&self, config: &Config) -> FeedData {
-        let key = sanitize_blog_key(&self.api_json.name);
+    fn feed_data(&self) -> FeedData {
         FeedData {
-            id: format!("{}/{}", config.feed_url_base, key),
-            key,
+            id: self.feed_id.clone(),
+            key: self.key.clone(),
             title: self.api_json.name.clone(),
             url: self.api_json.home.clone(),
         }
@@ -105,9 +110,7 @@ impl Blog for WordpressBlog {
         }
         if let Some(pb) = pb { pb.finish() };
 
-        let blog_key = sanitize_blog_key(&self.api_json.name);
-        let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
-        Ok(posts.iter().map(|p| post_to_entry(p, &blog_id, &authors)).collect())
+        Ok(posts.iter().map(|p| post_to_entry(p, &self.feed_id, &authors)).collect())
     }
 }
 

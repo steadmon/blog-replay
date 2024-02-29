@@ -17,9 +17,12 @@ struct BloggerJson {
     pages: ItemSummary,
 }
 
+// Can't combine this with the above BloggerJson struct because we can't deserialize reqwest::Url
 struct BloggerBlog {
     api_json: BloggerJson,
     posts_api_url: Url,
+    key: String,
+    feed_id: String,
 }
 
 pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn Blog>> {
@@ -38,9 +41,14 @@ pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn B
         api_json.id
     ))?;
 
+    let key = sanitize_blog_key(&api_json.name);
+    let feed_id = format!("{}/{}", config.feed_url_base, key);
+
     Ok(Box::new(BloggerBlog {
         api_json,
         posts_api_url,
+        key,
+        feed_id,
     }))
 }
 
@@ -49,11 +57,10 @@ impl Blog for BloggerBlog {
         BlogType::Blogger
     }
 
-    fn feed_data(&self, config: &Config) -> FeedData {
-        let key = sanitize_blog_key(&self.api_json.name);
+    fn feed_data(&self) -> FeedData {
         FeedData {
-            id: format!("{}/{}", config.feed_url_base, key),
-            key,
+            id: self.feed_id.clone(),
+            key: self.key.clone(),
             title: self.api_json.name.clone(),
             url: self.api_json.url.clone(),
         }
@@ -99,10 +106,8 @@ impl Blog for BloggerBlog {
         // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
 
         // Add our prefix to Blogger's post IDs
-        let blog_key = sanitize_blog_key(&self.api_json.name);
-        let blog_id = format!("{}/{}", config.feed_url_base, blog_key);
         for post in &mut posts {
-            post.id = format!("{}/{}", blog_id, post.id);
+            post.id = format!("{}/{}", self.feed_id, post.id);
         }
 
         Ok(posts.into_iter().map(|p| p.into()).collect())
