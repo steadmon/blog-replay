@@ -21,6 +21,7 @@ struct BloggerJson {
 struct BloggerBlog {
     api_json: BloggerJson,
     posts_api_url: Url,
+    pages_api_url: Url,
     key: String,
     feed_id: String,
 }
@@ -41,12 +42,18 @@ pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn B
         api_json.id
     ))?;
 
+    let pages_api_url = Url::parse(&format!(
+        "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
+        api_json.id
+    ))?;
+
     let key = sanitize_blog_key(&api_json.name);
     let feed_id = format!("{}/{}", config.feed_url_base, key);
 
     Ok(Box::new(BloggerBlog {
         api_json,
         posts_api_url,
+        pages_api_url,
         key,
         feed_id,
     }))
@@ -94,12 +101,8 @@ impl Blog for BloggerBlog {
         }
 
         if self.api_json.pages.total_items > 0 {
-            let pages_api_url = Url::parse(&format!(
-                "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
-                self.api_json.id
-            ))?;
             let mut page_resp =
-                retry_request(config, || get_page_once(config, client, &pages_api_url, None))?;
+                retry_request(config, || get_page_once(config, client, &self.pages_api_url, None))?;
             posts.append(&mut page_resp.items);
         }
 
