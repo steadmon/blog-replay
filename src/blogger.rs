@@ -89,7 +89,7 @@ impl Blog for BloggerBlog<'_> {
             let pb = init_progress_bar(self.api_json.posts.total_items as u64);
             loop {
                 let mut post_resp = retry_request(self.config, || {
-                    get_page_once(self.config, self.client, &self.posts_api_url, next_page_token.as_ref())
+                    self.query_once(&self.posts_api_url, next_page_token.as_ref())
                 })?;
                 pb.inc(post_resp.items.len().try_into().unwrap());
                 posts.append(&mut post_resp.items);
@@ -106,7 +106,7 @@ impl Blog for BloggerBlog<'_> {
 
         if self.api_json.pages.total_items > 0 {
             let mut page_resp = retry_request(self.config, || {
-                get_page_once(self.config, self.client, &self.pages_api_url, None)
+                self.query_once(&self.pages_api_url, None)
             })?;
             posts.append(&mut page_resp.items);
         }
@@ -119,6 +119,26 @@ impl Blog for BloggerBlog<'_> {
         }
 
         Ok(posts.into_iter().map(|p| p.into()).collect())
+    }
+}
+
+impl BloggerBlog<'_> {
+    fn query_once(&self, api_url: &Url, page_token: Option<&String>) -> Result<ListPostsResponse> {
+        let req = self.client.get(api_url.clone()).query(&[
+            ("key", &self.config.blogger_api_key),
+            ("orderBy", &String::from("published")),
+            ("fetchBodies", &String::from("true")),
+        ]);
+
+        let req = if let Some(token) = page_token {
+            req.query(&[("pageToken", token)])
+        } else {
+            req
+        };
+
+        let resp = req.send()?;
+
+        Ok(resp.error_for_status()?.json()?)
     }
 }
 
@@ -185,27 +205,4 @@ impl From<Post> for Entry {
 struct ListPostsResponse {
     next_page_token: Option<String>,
     items: Vec<Post>,
-}
-
-fn get_page_once(
-    config: &Config,
-    client: &Client,
-    api_url: &Url,
-    page_token: Option<&String>,
-) -> Result<ListPostsResponse> {
-    let req = client.get(api_url.clone()).query(&[
-        ("key", &config.blogger_api_key),
-        ("orderBy", &String::from("published")),
-        ("fetchBodies", &String::from("true")),
-    ]);
-
-    let req = if let Some(token) = page_token {
-        req.query(&[("pageToken", token)])
-    } else {
-        req
-    };
-
-    let resp = req.send()?;
-
-    Ok(resp.error_for_status()?.json()?)
 }
