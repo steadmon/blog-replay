@@ -7,7 +7,7 @@ use super::config::Config;
 
 pub trait Blog {
     fn feed_data(&self) -> FeedData;
-    fn entries(&self) -> Result<Vec<Entry>>;
+    fn entries(&mut self) -> Result<Vec<Entry>>;
 }
 
 pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result<Box<dyn Blog + 'a>> {

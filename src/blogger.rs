@@ -24,8 +24,14 @@ struct BloggerBlog<'a> {
     pages_api_url: Url,
     key: String,
     feed_id: String,
+    seen_posts: usize,
+    posts_done: bool,
+    pages_done: bool,
+    next_page_token: Option<String>,
+    pending_entries: Vec<Entry>,
     config: &'a Config,
     client: &'a Client,
+    pb: Option<indicatif::ProgressBar>,
 }
 
 pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result<Box<dyn Blog + 'a>> {
@@ -58,8 +64,14 @@ pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result
         pages_api_url,
         key,
         feed_id,
+        seen_posts: 0,
+        posts_done: false,
+        pages_done: false,
+        next_page_token: None,
+        pending_entries: Vec::new(),
         config,
         client,
+        pb: None,
     }))
 }
 
@@ -73,41 +85,13 @@ impl Blog for BloggerBlog<'_> {
         }
     }
 
-    fn entries(&self) -> Result<Vec<Entry>> {
+    // TODO: delete after switching to Iterator
+    fn entries(&mut self) -> Result<Vec<Entry>> {
         let mut posts: Vec<Entry> = Vec::new();
 
-        println!(
-            r#"Scraping "{}" ({} posts, {} pages)"#,
-            &self.api_json.name, self.api_json.posts.total_items, self.api_json.pages.total_items
-        );
-        if self.api_json.posts.total_items > 0 {
-            let mut next_page_token: Option<String> = None;
-            let pb = init_progress_bar(self.api_json.posts.total_items as u64);
-            loop {
-                let mut post_resp = retry_request(self.config, || {
-                    self.query_once(&self.posts_api_url, next_page_token.as_ref())
-                })?;
-                pb.inc(post_resp.items.len().try_into().unwrap());
-                posts.extend(post_resp.items.iter().map(|p| self.post_to_entry(p)));
-
-                next_page_token = post_resp.next_page_token.take();
-                if next_page_token.is_none() {
-                    break;
-                }
-
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
-            pb.finish()
+        for post in self {
+            posts.push(post?);
         }
-
-        if self.api_json.pages.total_items > 0 {
-            let page_resp = retry_request(self.config, || {
-                self.query_once(&self.pages_api_url, None)
-            })?;
-            posts.extend(page_resp.items.iter().map(|p| self.post_to_entry(p)));
-        }
-
-        // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
 
         Ok(posts)
     }
@@ -132,38 +116,128 @@ impl BloggerBlog<'_> {
         Ok(resp.error_for_status()?.json()?)
     }
 
-    fn post_to_entry(&self, post: &Post) -> Entry {
-        let content = post.content.as_ref().map(|v| {
-            ContentBuilder::default()
-                .value(v.clone())
-                .content_type(Some("html".to_string()))
-                .build()
-        });
+}
 
-        EntryBuilder::default()
-            .title(post.title.clone())
-            .id(format!("{}/{}", self.feed_id, post.id))
-            .published(parse_datetime(&post.published))
-            .author(Person {
-                name: post.author.display_name.clone(),
-                email: None,
-                uri: Some(post.author.url.clone()),
-            })
-            .content(content)
-            .link(
-                LinkBuilder::default()
-                    .href(post.url.clone())
-                    .rel("alternate")
-                    .build(),
-            )
+// We don't want this to be a BloggerBlog method, because we'll be modifying the pending_posts
+// member while mapping this function over the API results (so we'd have clashing mutable vs.
+// immutable borrows). If we instead just take a ref to only the feed_id, there's no conflict.
+fn post_to_entry(post: &Post, feed_id: &String) -> Entry {
+    let content = post.content.as_ref().map(|v| {
+        ContentBuilder::default()
+            .value(v.clone())
+            .content_type(Some("html".to_string()))
             .build()
+    });
+
+    EntryBuilder::default()
+        .title(post.title.clone())
+        .id(format!("{}/{}", feed_id, post.id))
+        .published(parse_datetime(&post.published))
+        .author(Person {
+            name: post.author.display_name.clone(),
+            email: None,
+            uri: Some(post.author.url.clone()),
+        })
+        .content(content)
+        .link(
+            LinkBuilder::default()
+                .href(post.url.clone())
+                .rel("alternate")
+                .build(),
+        )
+        .build()
+}
+
+impl Iterator for BloggerBlog<'_> {
+    type Item = Result<Entry>;
+
+    fn next(&mut self) -> Option<Result<Entry>> {
+        if self.posts_done && self.pages_done {
+            if let Some(pb) = &self.pb {
+                pb.finish();
+            }
+            return None;
+        }
+
+        if self.pending_entries.is_empty() {
+            if self.pb.is_none() {
+                println!(
+                    r#"Scraping "{}" ({} posts, {} pages)"#,
+                    &self.api_json.name,
+                    self.api_json.posts.total_items,
+                    self.api_json.pages.total_items
+                );
+                self.pb = Some(init_progress_bar(
+                    (self.api_json.posts.total_items + self.api_json.pages.total_items) as u64
+                ));
+            } else {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+
+            if let Err(e) = self.get_new_entries() {
+                self.posts_done = true;
+                self.pages_done = true;
+                return Some(Err(e));
+            }
+        }
+
+        if let Some(pb) = &self.pb {
+            pb.inc(1);
+        }
+
+        self.pending_entries.pop().map(Ok)
+    }
+}
+
+impl BloggerBlog<'_> {
+    fn get_new_entries(&mut self) -> Result<()> {
+        if !self.posts_done && self.api_json.posts.total_items > 0 {
+            let mut post_resp = retry_request(self.config, || {
+                self.query_once(&self.posts_api_url, self.next_page_token.as_ref())
+            })?;
+
+            self.seen_posts += post_resp.items.len();
+            self.pending_entries.extend(
+                post_resp.items.iter().map(|p| post_to_entry(p, &self.feed_id)));
+
+            self.next_page_token = post_resp.next_page_token.take();
+            if self.next_page_token.is_none() {
+                self.posts_done = true;
+                if self.seen_posts < self.api_json.posts.total_items {
+                    anyhow::bail!(
+                        "Expected {} posts, saw {}",
+                        self.api_json.posts.total_items,
+                        self.seen_posts,
+                    );
+                }
+            }
+        } else if !self.pages_done && self.api_json.pages.total_items > 0 {
+            let page_resp = retry_request(self.config, || {
+                self.query_once(&self.pages_api_url, None)
+            })?;
+
+            self.pending_entries.extend(
+                page_resp.items.iter().map(|p| post_to_entry(p, &self.feed_id)));
+
+            self.pages_done = true;
+
+            if page_resp.items.len() < self.api_json.pages.total_items {
+                anyhow::bail!(
+                    "Expected {} pages, saw {}",
+                    self.api_json.pages.total_items,
+                    page_resp.items.len(),
+                );
+            }
+        }
+
+        Ok(())
     }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ItemSummary {
-    total_items: u32,
+    total_items: usize,
 }
 
 #[derive(Serialize, Deserialize, Debug)]

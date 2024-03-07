@@ -29,7 +29,7 @@ fn do_scrape(
         .user_agent(USER_AGENT)
         .build()?;
 
-    let blog = common::get_blog(config, &client, url)?;
+    let mut blog = common::get_blog(config, &client, url)?;
     let feed_data = blog.feed_data();
     let entries = blog.entries()?;
 

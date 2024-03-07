@@ -73,7 +73,7 @@ impl Blog for WordpressBlog<'_> {
         }
     }
 
-    fn entries(&self) -> anyhow::Result<Vec<Entry>> {
+    fn entries(&mut self) -> anyhow::Result<Vec<Entry>> {
         let mut posts: Vec<Entry> = Vec::new();
 
         // Get # api pages & # items
