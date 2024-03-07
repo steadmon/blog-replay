@@ -14,8 +14,8 @@ struct WordpressJson {
     home: String,
 }
 
-pub fn get_blog(config: &Config, client: &Client, url: &str)
-    -> anyhow::Result<Box<dyn Blog>>
+pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str)
+    -> anyhow::Result<Box<dyn Blog + 'a>>
 {
     // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
     // this doesn't seem to be enabled on all sites.
@@ -34,19 +34,23 @@ pub fn get_blog(config: &Config, client: &Client, url: &str)
         pages_api_url: api_url.join("wp/v2/pages")?,
         key,
         feed_id,
+        config,
+        client,
     }))
 }
 
-struct WordpressBlog {
+struct WordpressBlog<'a> {
     api_json: WordpressJson,
     users_api_url: Url,
     posts_api_url: Url,
     pages_api_url: Url,
     key: String,
     feed_id: String,
+    config: &'a Config,
+    client: &'a Client,
 }
 
-impl Blog for WordpressBlog {
+impl Blog for WordpressBlog<'_> {
     fn blog_type(&self) -> BlogType {
         BlogType::Wordpress
     }
@@ -60,20 +64,20 @@ impl Blog for WordpressBlog {
         }
     }
 
-    fn entries(&self, config: &Config, client: &Client) -> anyhow::Result<Vec<Entry>> {
+    fn entries(&self) -> anyhow::Result<Vec<Entry>> {
         let mut posts: Vec<Post> = Vec::new();
 
         // Get author map
-        let authors = retry_request(config, || {
-            get_users_once(client, &self.users_api_url)
+        let authors = retry_request(self.config, || {
+            get_users_once(self.client, &self.users_api_url)
         })?;
 
         // Get # api pages & # items
         let mut api_page = 1;
         let mut pb: Option<indicatif::ProgressBar> = None;
         loop {
-            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
-                get_page_once(client, &self.posts_api_url, api_page)
+            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+                get_page_once(self.client, &self.posts_api_url, api_page)
             })?;
             if api_page == 1 {
                 println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
@@ -93,8 +97,8 @@ impl Blog for WordpressBlog {
         api_page = 1;
         pb = None;
         loop {
-            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(config, || {
-                get_page_once(client, &self.pages_api_url, api_page)
+            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+                get_page_once(self.client, &self.pages_api_url, api_page)
             })?;
             if api_page == 1 {
                 println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);

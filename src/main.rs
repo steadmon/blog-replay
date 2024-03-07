@@ -31,7 +31,7 @@ fn do_scrape(
 
     let blog = common::get_blog(config, &client, url)?;
     let feed_data = blog.feed_data();
-    let entries = blog.entries(config, &client)?;
+    let entries = blog.entries()?;
 
     let meta_tree = db.open_tree("feed_metadata")?;
     meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;

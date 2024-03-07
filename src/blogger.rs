@@ -18,15 +18,17 @@ struct BloggerJson {
 }
 
 // Can't combine this with the above BloggerJson struct because we can't deserialize reqwest::Url
-struct BloggerBlog {
+struct BloggerBlog<'a> {
     api_json: BloggerJson,
     posts_api_url: Url,
     pages_api_url: Url,
     key: String,
     feed_id: String,
+    config: &'a Config,
+    client: &'a Client,
 }
 
-pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn Blog>> {
+pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result<Box<dyn Blog + 'a>> {
     let api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
     let api_json: BloggerJson = retry_request(config, || {
         Ok(client
@@ -56,10 +58,12 @@ pub fn get_blog(config: &Config, client: &Client, url: &str) -> Result<Box<dyn B
         pages_api_url,
         key,
         feed_id,
+        config,
+        client,
     }))
 }
 
-impl Blog for BloggerBlog {
+impl Blog for BloggerBlog<'_> {
     fn blog_type(&self) -> BlogType {
         BlogType::Blogger
     }
@@ -73,7 +77,7 @@ impl Blog for BloggerBlog {
         }
     }
 
-    fn entries(&self, config: &Config, client: &Client) -> Result<Vec<Entry>> {
+    fn entries(&self) -> Result<Vec<Entry>> {
         let mut posts: Vec<Post> = Vec::new();
 
         println!(
@@ -84,8 +88,8 @@ impl Blog for BloggerBlog {
             let mut next_page_token: Option<String> = None;
             let pb = init_progress_bar(self.api_json.posts.total_items as u64);
             loop {
-                let mut post_resp = retry_request(config, || {
-                    get_page_once(config, client, &self.posts_api_url, next_page_token.as_ref())
+                let mut post_resp = retry_request(self.config, || {
+                    get_page_once(self.config, self.client, &self.posts_api_url, next_page_token.as_ref())
                 })?;
                 pb.inc(post_resp.items.len().try_into().unwrap());
                 posts.append(&mut post_resp.items);
@@ -101,8 +105,9 @@ impl Blog for BloggerBlog {
         }
 
         if self.api_json.pages.total_items > 0 {
-            let mut page_resp =
-                retry_request(config, || get_page_once(config, client, &self.pages_api_url, None))?;
+            let mut page_resp = retry_request(self.config, || {
+                get_page_once(self.config, self.client, &self.pages_api_url, None)
+            })?;
             posts.append(&mut page_resp.items);
         }
 
