@@ -21,8 +21,12 @@ pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str)
     // this doesn't seem to be enabled on all sites.
     // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
     let api_url = Url::parse(format!("{url}/wp-json/").as_str())?;
-    let api_json = retry_request(config, || {
-        get_blog_once(client, &api_url)
+    let api_json: WordpressJson = retry_request(config, || {
+        Ok(client
+                .get(api_url.clone())
+                .send()?
+                .error_for_status()?
+                .json()?)
     })?;
 
     let key = sanitize_blog_key(&api_json.name);
@@ -68,16 +72,14 @@ impl Blog for WordpressBlog<'_> {
         let mut posts: Vec<Post> = Vec::new();
 
         // Get author map
-        let authors = retry_request(self.config, || {
-            get_users_once(self.client, &self.users_api_url)
-        })?;
+        let authors = retry_request(self.config, || self.get_users_once())?;
 
         // Get # api pages & # items
         let mut api_page = 1;
         let mut pb: Option<indicatif::ProgressBar> = None;
         loop {
             let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                get_page_once(self.client, &self.posts_api_url, api_page)
+                self.get_page_once(&self.posts_api_url, api_page)
             })?;
             if api_page == 1 {
                 println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
@@ -98,7 +100,7 @@ impl Blog for WordpressBlog<'_> {
         pb = None;
         loop {
             let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                get_page_once(self.client, &self.pages_api_url, api_page)
+                self.get_page_once(&self.pages_api_url, api_page)
             })?;
             if api_page == 1 {
                 println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);
@@ -118,6 +120,36 @@ impl Blog for WordpressBlog<'_> {
     }
 }
 
+impl WordpressBlog<'_> {
+    fn get_users_once(&self) -> anyhow::Result<HashMap<usize, String>> {
+        let resp = self.client.get(self.users_api_url.clone()).send()?;
+        let mut users: Vec<User> = resp.error_for_status()?.json()?;
+        Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
+    }
+
+    fn get_page_once(&self, api_url: &Url, page: usize)
+        -> anyhow::Result<(Vec<Post>, usize, usize)>
+    {
+        let req = self.client.get(api_url.clone()).query(&[("page", &format!("{page}"))]);
+        let resp = req.send()?.error_for_status()?;
+
+        let items = resp
+            .headers()
+            .get("X-WP-Total")
+            .ok_or_else(|| anyhow::anyhow!("Missing expected X-WP-Total header"))?
+            .to_str()?
+            .parse::<usize>()?;
+        let pages = resp
+            .headers()
+            .get("X-WP-TotalPages")
+            .ok_or_else(|| anyhow::anyhow!("Missing expected X-WP-TotalPages header"))?
+            .to_str()?
+            .parse::<usize>()?;
+        let posts = resp.json()?;
+
+        Ok((posts, items, pages))
+    }
+}
 
 #[derive(Deserialize, Debug)]
 struct Content {
@@ -163,49 +195,4 @@ fn post_to_entry(post: &Post, blog_id: &str, author_map: &HashMap<usize, String>
                 .build(),
         )
         .build()
-}
-
-fn get_blog_once(client: &Client, api_url: &Url) -> anyhow::Result<WordpressJson> {
-    let resp = client
-        .get(api_url.clone())
-        .send()?;
-
-    Ok(resp.error_for_status()?.json()?)
-}
-
-fn get_users_once(client: &Client, api_url: &Url) -> anyhow::Result<HashMap<usize, String>> {
-    let resp = client
-        .get(api_url.clone())
-        .send()?;
-
-    let mut users: Vec<User> = resp.error_for_status()?.json()?;
-    Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
-}
-
-fn get_page_once(
-    client: &Client,
-    api_url: &Url,
-    page: usize,
-) -> anyhow::Result<(Vec<Post>, usize, usize)> {
-    let req = client
-        .get(api_url.clone())
-        .query(&[("page", &format!("{page}"))]);
-
-    let resp = req.send()?.error_for_status()?;
-
-    let items = resp
-        .headers()
-        .get("X-WP-Total")
-        .ok_or_else(|| anyhow::anyhow!("Missing expected X-WP-Total header"))?
-        .to_str()?
-        .parse::<usize>()?;
-    let pages = resp
-        .headers()
-        .get("X-WP-TotalPages")
-        .ok_or_else(|| anyhow::anyhow!("Missing expected X-WP-TotalPages header"))?
-        .to_str()?
-        .parse::<usize>()?;
-    let posts = resp.json()?;
-
-    Ok((posts, items, pages))
 }
