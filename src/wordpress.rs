@@ -81,46 +81,27 @@ impl Blog for WordpressBlog<'_> {
         let mut posts: Vec<Entry> = Vec::new();
 
         // Get # api pages & # items
-        let mut api_page = 1;
-        let mut pb: Option<indicatif::ProgressBar> = None;
-        loop {
-            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                self.get_page_once(&self.posts_api_url, api_page)
-            })?;
-            if api_page == 1 {
-                println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
-                pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-            }
-            if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-            posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
-            if api_page == num_api_pages || posts.len() == num_posts {
-                break;
-            }
+        for (url, display) in &[(&self.posts_api_url, "posts"), (&self.pages_api_url, "pages")] {
+            let mut api_page = 1;
+            let mut pb: Option<indicatif::ProgressBar> = None;
+            loop {
+                let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+                    self.get_page_once(url, api_page)
+                })?;
+                if api_page == 1 {
+                    println!(r#"Scraping "{}" ({} {})"#, &self.api_json.name, num_posts, display);
+                    pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
+                }
+                if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
+                posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
+                if api_page == num_api_pages || posts.len() == num_posts {
+                    break;
+                }
 
-            api_page += 1;
+                api_page += 1;
+            }
+            if let Some(pb) = pb { pb.finish() };
         }
-        if let Some(pb) = pb { pb.finish() };
-
-        // Repeat for posts vs. pages
-        api_page = 1;
-        pb = None;
-        loop {
-            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                self.get_page_once(&self.pages_api_url, api_page)
-            })?;
-            if api_page == 1 {
-                println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);
-                pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-            }
-            if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-            posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
-            if api_page == num_api_pages || posts.len() == num_posts {
-                break;
-            }
-
-            api_page += 1;
-        }
-        if let Some(pb) = pb { pb.finish() };
 
         Ok(posts)
     }
