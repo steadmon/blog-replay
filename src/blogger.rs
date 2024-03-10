@@ -78,7 +78,7 @@ impl Blog for BloggerBlog<'_> {
     }
 
     fn entries(&self) -> Result<Vec<Entry>> {
-        let mut posts: Vec<Post> = Vec::new();
+        let mut posts: Vec<Entry> = Vec::new();
 
         println!(
             r#"Scraping "{}" ({} posts, {} pages)"#,
@@ -92,7 +92,7 @@ impl Blog for BloggerBlog<'_> {
                     self.query_once(&self.posts_api_url, next_page_token.as_ref())
                 })?;
                 pb.inc(post_resp.items.len().try_into().unwrap());
-                posts.append(&mut post_resp.items);
+                posts.extend(post_resp.items.iter().map(|p| self.post_to_entry(p)));
 
                 next_page_token = post_resp.next_page_token.take();
                 if next_page_token.is_none() {
@@ -105,20 +105,15 @@ impl Blog for BloggerBlog<'_> {
         }
 
         if self.api_json.pages.total_items > 0 {
-            let mut page_resp = retry_request(self.config, || {
+            let page_resp = retry_request(self.config, || {
                 self.query_once(&self.pages_api_url, None)
             })?;
-            posts.append(&mut page_resp.items);
+            posts.extend(page_resp.items.iter().map(|p| self.post_to_entry(p)));
         }
 
         // TODO: check posts.len == blog.pages.total_items + blog.posts.total_items
 
-        // Add our prefix to Blogger's post IDs
-        for post in &mut posts {
-            post.id = format!("{}/{}", self.feed_id, post.id);
-        }
-
-        Ok(posts.into_iter().map(|p| p.into()).collect())
+        Ok(posts)
     }
 }
 
@@ -140,6 +135,33 @@ impl BloggerBlog<'_> {
 
         Ok(resp.error_for_status()?.json()?)
     }
+
+    fn post_to_entry(&self, post: &Post) -> Entry {
+        let content = post.content.as_ref().map(|v| {
+            ContentBuilder::default()
+                .value(v.clone())
+                .content_type(Some("html".to_string()))
+                .build()
+        });
+
+        EntryBuilder::default()
+            .title(post.title.clone())
+            .id(format!("{}/{}", self.feed_id, post.id))
+            .published(parse_datetime(&post.published))
+            .author(Person {
+                name: post.author.display_name.clone(),
+                email: None,
+                uri: Some(post.author.url.clone()),
+            })
+            .content(content)
+            .link(
+                LinkBuilder::default()
+                    .href(post.url.clone())
+                    .rel("alternate")
+                    .build(),
+            )
+            .build()
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -155,16 +177,6 @@ struct Author {
     url: String,
 }
 
-impl From<Author> for Person {
-    fn from(author: Author) -> Self {
-        Person {
-            name: author.display_name,
-            email: None,
-            uri: Some(author.url),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 struct Post {
     id: String,
@@ -173,31 +185,6 @@ struct Post {
     content: Option<String>,
     author: Author,
     published: String,
-}
-
-impl From<Post> for Entry {
-    fn from(post: Post) -> Self {
-        let content = post.content.map(|v| {
-            ContentBuilder::default()
-                .value(v)
-                .content_type(Some("html".to_string()))
-                .build()
-        });
-
-        EntryBuilder::default()
-            .title(post.title)
-            .id(post.id)
-            .published(parse_datetime(&post.published))
-            .author(post.author.into())
-            .content(content)
-            .link(
-                LinkBuilder::default()
-                    .href(post.url)
-                    .rel("alternate")
-                    .build(),
-            )
-            .build()
-    }
 }
 
 #[derive(Deserialize, Debug)]

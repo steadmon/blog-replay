@@ -31,27 +31,36 @@ pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str)
 
     let key = sanitize_blog_key(&api_json.name);
     let feed_id = format!("{}/{}", config.feed_url_base, key);
+    let users_url = api_url.join("wp/v2/users")?;
+    let authors = retry_request(config, || get_users_once(client, &users_url))?;
+
     Ok(Box::new(WordpressBlog {
         api_json,
-        users_api_url: api_url.join("wp/v2/users")?,
         posts_api_url: api_url.join("wp/v2/posts")?,
         pages_api_url: api_url.join("wp/v2/pages")?,
         key,
         feed_id,
         config,
         client,
+        authors,
     }))
+}
+
+fn get_users_once(client: &Client, url: &Url) -> anyhow::Result<HashMap<usize, String>> {
+    let resp = client.get(url.clone()).send()?;
+    let mut users: Vec<User> = resp.error_for_status()?.json()?;
+    Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
 }
 
 struct WordpressBlog<'a> {
     api_json: WordpressJson,
-    users_api_url: Url,
     posts_api_url: Url,
     pages_api_url: Url,
     key: String,
     feed_id: String,
     config: &'a Config,
     client: &'a Client,
+    authors: HashMap<usize, String>,
 }
 
 impl Blog for WordpressBlog<'_> {
@@ -69,16 +78,13 @@ impl Blog for WordpressBlog<'_> {
     }
 
     fn entries(&self) -> anyhow::Result<Vec<Entry>> {
-        let mut posts: Vec<Post> = Vec::new();
-
-        // Get author map
-        let authors = retry_request(self.config, || self.get_users_once())?;
+        let mut posts: Vec<Entry> = Vec::new();
 
         // Get # api pages & # items
         let mut api_page = 1;
         let mut pb: Option<indicatif::ProgressBar> = None;
         loop {
-            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
                 self.get_page_once(&self.posts_api_url, api_page)
             })?;
             if api_page == 1 {
@@ -86,7 +92,7 @@ impl Blog for WordpressBlog<'_> {
                 pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
             if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-            posts.append(&mut tmp_posts);
+            posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
             if api_page == num_api_pages || posts.len() == num_posts {
                 break;
             }
@@ -99,7 +105,7 @@ impl Blog for WordpressBlog<'_> {
         api_page = 1;
         pb = None;
         loop {
-            let (mut tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
                 self.get_page_once(&self.pages_api_url, api_page)
             })?;
             if api_page == 1 {
@@ -107,7 +113,7 @@ impl Blog for WordpressBlog<'_> {
                 pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
             if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-            posts.append(&mut tmp_posts);
+            posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
             if api_page == num_api_pages || posts.len() == num_posts {
                 break;
             }
@@ -116,17 +122,11 @@ impl Blog for WordpressBlog<'_> {
         }
         if let Some(pb) = pb { pb.finish() };
 
-        Ok(posts.iter().map(|p| post_to_entry(p, &self.feed_id, &authors)).collect())
+        Ok(posts)
     }
 }
 
 impl WordpressBlog<'_> {
-    fn get_users_once(&self) -> anyhow::Result<HashMap<usize, String>> {
-        let resp = self.client.get(self.users_api_url.clone()).send()?;
-        let mut users: Vec<User> = resp.error_for_status()?.json()?;
-        Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
-    }
-
     fn get_page_once(&self, api_url: &Url, page: usize)
         -> anyhow::Result<(Vec<Post>, usize, usize)>
     {
@@ -149,6 +149,31 @@ impl WordpressBlog<'_> {
 
         Ok((posts, items, pages))
     }
+
+    fn post_to_entry(&self, post: &Post) -> Entry {
+        let content = ContentBuilder::default()
+            .value(post.content.rendered.clone())
+            .content_type(Some("html".to_string()))
+            .build();
+
+        EntryBuilder::default()
+            .title(post.title.rendered.clone())
+            .id(format!("{}/{}", self.feed_id, post.id))
+            .published(parse_assuming_utc(&post.date_gmt))
+            .author(Person {
+                name: self.authors[&post.author].clone(),
+                email: None,
+                uri: None,
+            })
+            .content(content)
+            .link(
+                LinkBuilder::default()
+                    .href(post.link.clone())
+                    .rel("alternate")
+                    .build(),
+            )
+            .build()
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -170,29 +195,4 @@ struct Post {
     title: Content,
     content: Content,
     author: usize,
-}
-
-fn post_to_entry(post: &Post, blog_id: &str, author_map: &HashMap<usize, String>) -> Entry {
-    let content = ContentBuilder::default()
-        .value(post.content.rendered.clone())
-        .content_type(Some("html".to_string()))
-        .build();
-
-    EntryBuilder::default()
-        .title(post.title.rendered.clone())
-        .id(format!("{}/{}", blog_id, post.id))
-        .published(parse_assuming_utc(&post.date_gmt))
-        .author(Person {
-            name: author_map[&post.author].clone(),
-            email: None,
-            uri: None,
-        })
-        .content(content)
-        .link(
-            LinkBuilder::default()
-                .href(post.link.clone())
-                .rel("alternate")
-                .build(),
-        )
-        .build()
 }
