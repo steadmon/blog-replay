@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::Url;
 use reqwest::blocking::Client;
@@ -43,6 +44,11 @@ pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str)
         config,
         client,
         authors,
+        api_page: 1,
+        posts_done: false,
+        pages_done: false,
+        pending_entries: Vec::new(),
+        pb: None,
     }))
 }
 
@@ -61,6 +67,11 @@ struct WordpressBlog<'a> {
     config: &'a Config,
     client: &'a Client,
     authors: HashMap<usize, String>,
+    api_page: usize,
+    posts_done: bool,
+    pages_done: bool,
+    pending_entries: Vec<Entry>,
+    pb: Option<indicatif::ProgressBar>,
 }
 
 impl Blog for WordpressBlog<'_> {
@@ -76,34 +87,89 @@ impl Blog for WordpressBlog<'_> {
     fn entries(&mut self) -> anyhow::Result<Vec<Entry>> {
         let mut posts: Vec<Entry> = Vec::new();
 
-        // Get # api pages & # items
-        for (url, display) in &[(&self.posts_api_url, "posts"), (&self.pages_api_url, "pages")] {
-            let mut api_page = 1;
-            let mut pb: Option<indicatif::ProgressBar> = None;
-            loop {
-                let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                    self.get_page_once(url, api_page)
-                })?;
-                if api_page == 1 {
-                    println!(r#"Scraping "{}" ({} {})"#, &self.api_json.name, num_posts, display);
-                    pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-                }
-                if let Some(pb) = pb.as_ref() { pb.inc(tmp_posts.len().try_into().unwrap()) };
-                posts.extend(tmp_posts.iter().map(|p| self.post_to_entry(p)));
-                if api_page == num_api_pages || posts.len() == num_posts {
-                    break;
-                }
-
-                api_page += 1;
-            }
-            if let Some(pb) = pb { pb.finish() };
+        for post in self {
+            posts.push(post?);
         }
 
         Ok(posts)
     }
 }
 
+impl Iterator for WordpressBlog<'_> {
+    type Item = Result<Entry>;
+
+    fn next(&mut self) -> Option<Result<Entry>> {
+        if self.posts_done && self.pages_done {
+            if let Some(pb) = &self.pb {
+                pb.finish();
+            }
+            return None;
+        }
+
+        if self.pending_entries.is_empty() {
+            if self.api_page > 1 {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+
+            if let Err(e) = self.get_new_entries() {
+                self.posts_done = true;
+                self.pages_done = true;
+                return Some(Err(e));
+            }
+        }
+
+        if let Some(pb) = &self.pb {
+            // TODO: handle split between posts & pages bars
+            pb.inc(1);
+        }
+
+        self.pending_entries.pop().map(Ok)
+    }
+}
+
 impl WordpressBlog<'_> {
+    fn get_new_entries(&mut self) -> Result<()> {
+        if !self.posts_done {
+            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+                self.get_page_once(&self.posts_api_url, self.api_page)
+            })?;
+            if self.api_page == 1 {
+                println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
+                self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
+            }
+            self.pending_entries.extend(tmp_posts.iter().map(|p| post_to_entry(p, &self.feed_id, &self.authors)));
+            if self.api_page == num_api_pages {
+                self.posts_done = true;
+                if let Some(pb) = &self.pb {
+                    pb.finish();
+                }
+                self.api_page = 1;
+            } else {
+                self.api_page += 1;
+            }
+        } else if !self.pages_done {
+            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
+                self.get_page_once(&self.pages_api_url, self.api_page)
+            })?;
+            if self.api_page == 1 {
+                println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);
+                self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
+            }
+            self.pending_entries.extend(tmp_posts.iter().map(|p| post_to_entry(p, &self.feed_id, &self.authors)));
+            if self.api_page == num_api_pages {
+                self.pages_done = true;
+                if let Some(pb) = &self.pb {
+                    pb.finish();
+                }
+                self.api_page = 1;
+            } else {
+                self.api_page += 1;
+            }
+        }
+
+        Ok(())
+    }
+
     fn get_page_once(&self, api_url: &Url, page: usize)
         -> anyhow::Result<(Vec<Post>, usize, usize)>
     {
@@ -126,31 +192,31 @@ impl WordpressBlog<'_> {
 
         Ok((posts, items, pages))
     }
+}
 
-    fn post_to_entry(&self, post: &Post) -> Entry {
-        let content = ContentBuilder::default()
-            .value(post.content.rendered.clone())
-            .content_type(Some("html".to_string()))
-            .build();
+fn post_to_entry(post: &Post, feed_id: &String, authors: &HashMap<usize, String>) -> Entry {
+    let content = ContentBuilder::default()
+        .value(post.content.rendered.clone())
+        .content_type(Some("html".to_string()))
+        .build();
 
-        EntryBuilder::default()
-            .title(post.title.rendered.clone())
-            .id(format!("{}/{}", self.feed_id, post.id))
-            .published(parse_assuming_utc(&post.date_gmt))
-            .author(Person {
-                name: self.authors[&post.author].clone(),
-                email: None,
-                uri: None,
-            })
-            .content(content)
-            .link(
-                LinkBuilder::default()
-                    .href(post.link.clone())
-                    .rel("alternate")
-                    .build(),
-            )
-            .build()
-    }
+    EntryBuilder::default()
+        .title(post.title.rendered.clone())
+        .id(format!("{}/{}", feed_id, post.id))
+        .published(parse_assuming_utc(&post.date_gmt))
+        .author(Person {
+            name: authors[&post.author].clone(),
+            email: None,
+            uri: None,
+        })
+        .content(content)
+        .link(
+            LinkBuilder::default()
+                .href(post.link.clone())
+                .rel("alternate")
+                .build(),
+        )
+        .build()
 }
 
 #[derive(Deserialize, Debug)]
