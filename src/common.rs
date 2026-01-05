@@ -56,7 +56,7 @@ where
         ret = action();
         if let Err(ref e) = ret {
             if let Some(re) = e.downcast_ref::<reqwest::Error>() {
-                if re.status().map_or(false, |s| s.is_server_error()) {
+                if re.status().is_some_and(|s| s.is_server_error()) {
                     continue;
                 }
             }
