@@ -64,10 +64,6 @@ struct WordpressBlog<'a> {
 }
 
 impl Blog for WordpressBlog<'_> {
-    fn blog_type(&self) -> BlogType {
-        BlogType::Wordpress
-    }
-
     fn feed_data(&self) -> FeedData {
         FeedData {
             id: self.feed_id.clone(),

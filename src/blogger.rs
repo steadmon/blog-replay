@@ -64,10 +64,6 @@ pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result
 }
 
 impl Blog for BloggerBlog<'_> {
-    fn blog_type(&self) -> BlogType {
-        BlogType::Blogger
-    }
-
     fn feed_data(&self) -> FeedData {
         FeedData {
             id: self.feed_id.clone(),

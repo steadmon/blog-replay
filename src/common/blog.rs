@@ -5,17 +5,8 @@ use reqwest::blocking::Client;
 use super::atom::FeedData;
 use super::config::Config;
 
-#[derive(Debug)]
-pub enum BlogType {
-    Blogger,
-    Wordpress,
-}
-
 pub trait Blog {
-    fn blog_type(&self) -> BlogType;
-
     fn feed_data(&self) -> FeedData;
-
     fn entries(&self) -> Result<Vec<Entry>>;
 }
 
