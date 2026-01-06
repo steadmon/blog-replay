@@ -38,20 +38,15 @@ pub fn get_blog<'a>(
     let users_url = api_url.join("wp/v2/users")?;
     let authors = retry_request(config, || get_users_once(client, &users_url))?;
 
+    let posts = InternalIter::new(config, client, api_url.join("wp/v2/posts")?)?;
+    let pages = InternalIter::new(config, client, api_url.join("wp/v2/pages")?)?;
+
     Ok(Box::new(WordpressBlog {
         meta,
-        posts_api_url: api_url.join("wp/v2/posts")?,
-        pages_api_url: api_url.join("wp/v2/pages")?,
         key,
         feed_id,
-        config,
-        client,
         authors,
-        api_page: 1,
-        posts_done: false,
-        pages_done: false,
-        pending_entries: VecDeque::new(),
-        pb: None,
+        inner_iter: posts.chain(pages),
     }))
 }
 
@@ -64,18 +59,37 @@ fn get_users_once(client: &Client, url: &Url) -> anyhow::Result<HashMap<usize, S
 #[derive(Clone)]
 struct WordpressBlog<'a> {
     meta: WordpressMeta,
-    posts_api_url: Url,
-    pages_api_url: Url,
     key: String,
     feed_id: String,
-    config: &'a Config,
-    client: &'a Client,
     authors: HashMap<usize, String>,
-    api_page: usize,
-    posts_done: bool,
-    pages_done: bool,
-    pending_entries: VecDeque<Entry>,
-    pb: Option<indicatif::ProgressBar>,
+    inner_iter: std::iter::Chain<InternalIter<'a>, InternalIter<'a>>,
+}
+
+impl WordpressBlog<'_> {
+    fn post_to_entry(&self, post: &Post) -> Entry {
+        let content = ContentBuilder::default()
+            .value(post.content.rendered.clone())
+            .content_type(Some("html".to_string()))
+            .build();
+
+        EntryBuilder::default()
+            .title(post.title.rendered.clone())
+            .id(format!("{}/{}", self.feed_id, post.id))
+            .published(parse_assuming_utc(&post.date_gmt))
+            .author(Person {
+                name: self.authors[&post.author].clone(),
+                email: None,
+                uri: None,
+            })
+            .content(content)
+            .link(
+                LinkBuilder::default()
+                    .href(post.link.clone())
+                    .rel("alternate")
+                    .build(),
+            )
+            .build()
+    }
 }
 
 impl Blog for WordpressBlog<'_> {
@@ -92,98 +106,62 @@ impl Blog for WordpressBlog<'_> {
 impl Iterator for WordpressBlog<'_> {
     type Item = Result<Entry>;
 
-    fn next(&mut self) -> Option<Result<Entry>> {
-        if !self.pending_entries.is_empty() {
-            if let Some(pb) = &self.pb {
-                pb.inc(1);
-            }
-            self.pending_entries.pop_front().map(Ok)
-        } else if self.posts_done && self.pages_done {
-            if let Some(pb) = &self.pb {
-                pb.finish();
-            }
-            None
-        } else {
-            if self.api_page > 1 {
-                std::thread::sleep(std::time::Duration::from_secs(1));
-            }
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner_iter
+            .next()
+            .map(|r| r.map(|p| self.post_to_entry(&p)))
+    }
 
-            if let Err(e) = self.get_new_entries() {
-                self.posts_done = true;
-                self.pages_done = true;
-                Some(Err(e))
-            } else {
-                if let Some(pb) = &self.pb {
-                    pb.inc(1);
-                }
-                self.pending_entries.pop_front().map(Ok)
-            }
-        }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner_iter.size_hint()
     }
 }
 
-impl WordpressBlog<'_> {
-    fn get_new_entries(&mut self) -> Result<()> {
-        if !self.posts_done {
-            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                self.get_page_once(&self.posts_api_url, self.api_page)
-            })?;
-            if self.api_page == 1 {
-                println!(r#"Scraping "{}" ({} posts)"#, &self.meta.name, num_posts);
-                self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-            }
-            self.pending_entries.extend(
-                tmp_posts
-                    .iter()
-                    .map(|p| post_to_entry(p, &self.feed_id, &self.authors)),
-            );
-            if self.api_page == num_api_pages {
-                self.posts_done = true;
-                if let Some(pb) = &self.pb {
-                    pb.finish();
-                }
-                self.api_page = 1;
-            } else {
-                self.api_page += 1;
-            }
-        } else if !self.pages_done {
-            let (tmp_posts, num_posts, num_api_pages) = retry_request(self.config, || {
-                self.get_page_once(&self.pages_api_url, self.api_page)
-            })?;
-            if self.api_page == 1 {
-                println!(r#"Scraping "{}" ({} pages)"#, &self.meta.name, num_posts);
-                self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
-            }
-            self.pending_entries.extend(
-                tmp_posts
-                    .iter()
-                    .map(|p| post_to_entry(p, &self.feed_id, &self.authors)),
-            );
-            if self.api_page == num_api_pages {
-                self.pages_done = true;
-                if let Some(pb) = &self.pb {
-                    pb.finish();
-                }
-                self.api_page = 1;
-            } else {
-                self.api_page += 1;
-            }
-        }
+#[derive(Clone)]
+struct InternalIter<'a> {
+    config: &'a Config,
+    client: &'a Client,
+    url: Url,
+    done: bool,
+    pending: VecDeque<Post>,
+    api_page: usize,
+    expected_posts: usize,
+}
 
+impl<'a> InternalIter<'a> {
+    fn new(config: &'a Config, client: &'a Client, url: Url) -> Result<Self> {
+        let mut this = Self {
+            config,
+            client,
+            url,
+            done: false,
+            pending: VecDeque::new(),
+            api_page: 1,
+            expected_posts: 0,
+        };
+        this.fetch_entries()?;
+        Ok(this)
+    }
+
+    fn fetch_entries(&mut self) -> Result<()> {
+        let (tmp_posts, num_posts, num_api_pages) =
+            retry_request(self.config, || self.query_once())?;
+        self.expected_posts = num_posts;
+        self.pending.extend(tmp_posts);
+        if self.api_page == num_api_pages {
+            self.done = true;
+        } else {
+            self.api_page += 1;
+        }
         Ok(())
     }
 
-    fn get_page_once(
-        &self,
-        api_url: &Url,
-        page: usize,
-    ) -> anyhow::Result<(Vec<Post>, usize, usize)> {
+    fn query_once(&self) -> anyhow::Result<(Vec<Post>, usize, usize)> {
         let req = self
             .client
-            .get(api_url.clone())
-            .query(&[("page", &format!("{page}"))]);
+            .get(self.url.clone())
+            .query(&[("page", &format!("{}", self.api_page))]);
         let resp = req.send()?.error_for_status()?;
-
         let items = resp
             .headers()
             .get("X-WP-Total")
@@ -202,32 +180,33 @@ impl WordpressBlog<'_> {
     }
 }
 
-fn post_to_entry(post: &Post, feed_id: &String, authors: &HashMap<usize, String>) -> Entry {
-    let content = ContentBuilder::default()
-        .value(post.content.rendered.clone())
-        .content_type(Some("html".to_string()))
-        .build();
+impl Iterator for InternalIter<'_> {
+    type Item = Result<Post>;
 
-    EntryBuilder::default()
-        .title(post.title.rendered.clone())
-        .id(format!("{}/{}", feed_id, post.id))
-        .published(parse_assuming_utc(&post.date_gmt))
-        .author(Person {
-            name: authors[&post.author].clone(),
-            email: None,
-            uri: None,
-        })
-        .content(content)
-        .link(
-            LinkBuilder::default()
-                .href(post.link.clone())
-                .rel("alternate")
-                .build(),
-        )
-        .build()
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if !self.pending.is_empty() {
+                return self.pending.pop_front().map(Ok);
+            } else if self.done {
+                return None;
+            } else {
+                if self.api_page > 1 {
+                    std::thread::sleep(std::time::Duration::from_secs(1));
+                }
+                if let Err(e) = self.fetch_entries() {
+                    self.done = true;
+                    return Some(Err(e));
+                }
+            }
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.expected_posts, Some(self.expected_posts))
+    }
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 struct Content {
     rendered: String,
 }
@@ -238,7 +217,7 @@ struct User {
     name: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 struct Post {
     id: usize,
     date_gmt: String,

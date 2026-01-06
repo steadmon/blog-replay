@@ -36,7 +36,9 @@ fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path) -> Res
         let serialized_feed_data =
             bincode::serialize(&feed_data).map_err(|e| SledTxAbort(e.into()))?;
         meta_tree.insert(feed_data.key.as_str(), serialized_feed_data)?;
-        for entry in dyn_clone::clone_box(&*blog) {
+        let blog = dyn_clone::clone_box(&*blog);
+        let pb_iter = init_progress_bar(blog.size_hint().0.try_into().unwrap()).wrap_iter(blog);
+        for entry in pb_iter {
             let entry = entry.map_err(SledTxAbort)?;
             let serialized_entry = bincode::serialize(&entry).map_err(|e| SledTxAbort(e.into()))?;
             entry_tree.insert(
