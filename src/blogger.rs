@@ -10,7 +10,7 @@ use crate::common::*;
 
 // Parsed from Blogger API endpoint
 #[derive(Clone, Serialize, Deserialize, Debug)]
-struct BloggerJson {
+struct BloggerMeta {
     id: String,
     name: String,
     description: String,
@@ -19,10 +19,10 @@ struct BloggerJson {
     pages: ItemSummary,
 }
 
-// Can't combine this with the above BloggerJson struct because we can't deserialize reqwest::Url
+// Can't combine this with the above BloggerMeta struct because we can't deserialize reqwest::Url
 #[derive(Clone)]
 struct BloggerBlog<'a> {
-    api_json: BloggerJson,
+    meta: BloggerMeta,
     posts_api_url: Url,
     pages_api_url: Url,
     key: String,
@@ -43,7 +43,7 @@ pub fn get_blog<'a>(
     url: &str,
 ) -> Result<Box<dyn Blog + 'a>> {
     let api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
-    let api_json: BloggerJson = retry_request(config, || {
+    let meta: BloggerMeta = retry_request(config, || {
         Ok(client
             .get(api_url.clone())
             .query(&[("url", url), ("key", &config.blogger_api_key)])
@@ -54,19 +54,19 @@ pub fn get_blog<'a>(
 
     let posts_api_url = Url::parse(&format!(
         "https://www.googleapis.com/blogger/v3/blogs/{}/posts",
-        api_json.id
+        meta.id
     ))?;
 
     let pages_api_url = Url::parse(&format!(
         "https://www.googleapis.com/blogger/v3/blogs/{}/pages",
-        api_json.id
+        meta.id
     ))?;
 
-    let key = sanitize_blog_key(&api_json.name);
+    let key = sanitize_blog_key(&meta.name);
     let feed_id = format!("{}/{}", config.feed_url_base, key);
 
     Ok(Box::new(BloggerBlog {
-        api_json,
+        meta,
         posts_api_url,
         pages_api_url,
         key,
@@ -87,8 +87,8 @@ impl Blog for BloggerBlog<'_> {
         FeedData {
             id: self.feed_id.clone(),
             key: self.key.clone(),
-            title: self.api_json.name.clone(),
-            url: self.api_json.url.clone(),
+            title: self.meta.name.clone(),
+            url: self.meta.url.clone(),
         }
     }
 }
@@ -161,12 +161,10 @@ impl Iterator for BloggerBlog<'_> {
             if self.pb.is_none() {
                 println!(
                     r#"Scraping "{}" ({} posts, {} pages)"#,
-                    &self.api_json.name,
-                    self.api_json.posts.total_items,
-                    self.api_json.pages.total_items
+                    &self.meta.name, self.meta.posts.total_items, self.meta.pages.total_items
                 );
                 self.pb = Some(init_progress_bar(
-                    (self.api_json.posts.total_items + self.api_json.pages.total_items) as u64,
+                    (self.meta.posts.total_items + self.meta.pages.total_items) as u64,
                 ));
             } else {
                 std::thread::sleep(std::time::Duration::from_secs(1));
@@ -188,7 +186,7 @@ impl Iterator for BloggerBlog<'_> {
 
 impl BloggerBlog<'_> {
     fn get_new_entries(&mut self) -> Result<()> {
-        if !self.posts_done && self.api_json.posts.total_items > 0 {
+        if !self.posts_done && self.meta.posts.total_items > 0 {
             let mut post_resp = retry_request(self.config, || {
                 self.query_once(&self.posts_api_url, self.next_page_token.as_ref())
             })?;
@@ -204,15 +202,15 @@ impl BloggerBlog<'_> {
             self.next_page_token = post_resp.next_page_token.take();
             if self.next_page_token.is_none() {
                 self.posts_done = true;
-                if self.seen_posts < self.api_json.posts.total_items {
+                if self.seen_posts < self.meta.posts.total_items {
                     anyhow::bail!(
                         "Expected {} posts, saw {}",
-                        self.api_json.posts.total_items,
+                        self.meta.posts.total_items,
                         self.seen_posts,
                     );
                 }
             }
-        } else if !self.pages_done && self.api_json.pages.total_items > 0 {
+        } else if !self.pages_done && self.meta.pages.total_items > 0 {
             let page_resp =
                 retry_request(self.config, || self.query_once(&self.pages_api_url, None))?;
 
@@ -225,10 +223,10 @@ impl BloggerBlog<'_> {
 
             self.pages_done = true;
 
-            if page_resp.items.len() < self.api_json.pages.total_items {
+            if page_resp.items.len() < self.meta.pages.total_items {
                 anyhow::bail!(
                     "Expected {} pages, saw {}",
-                    self.api_json.pages.total_items,
+                    self.meta.pages.total_items,
                     page_resp.items.len(),
                 );
             }

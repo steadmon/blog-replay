@@ -11,7 +11,7 @@ use crate::common::*;
 
 // Parsed from Wordpress API endpoint
 #[derive(Clone, Deserialize, Debug)]
-struct WordpressJson {
+struct WordpressMeta {
     name: String,
     home: String,
 }
@@ -25,7 +25,7 @@ pub fn get_blog<'a>(
     // this doesn't seem to be enabled on all sites.
     // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
     let api_url = Url::parse(format!("{url}/wp-json/").as_str())?;
-    let api_json: WordpressJson = retry_request(config, || {
+    let meta: WordpressMeta = retry_request(config, || {
         Ok(client
             .get(api_url.clone())
             .send()?
@@ -33,13 +33,13 @@ pub fn get_blog<'a>(
             .json()?)
     })?;
 
-    let key = sanitize_blog_key(&api_json.name);
+    let key = sanitize_blog_key(&meta.name);
     let feed_id = format!("{}/{}", config.feed_url_base, key);
     let users_url = api_url.join("wp/v2/users")?;
     let authors = retry_request(config, || get_users_once(client, &users_url))?;
 
     Ok(Box::new(WordpressBlog {
-        api_json,
+        meta,
         posts_api_url: api_url.join("wp/v2/posts")?,
         pages_api_url: api_url.join("wp/v2/pages")?,
         key,
@@ -63,7 +63,7 @@ fn get_users_once(client: &Client, url: &Url) -> anyhow::Result<HashMap<usize, S
 
 #[derive(Clone)]
 struct WordpressBlog<'a> {
-    api_json: WordpressJson,
+    meta: WordpressMeta,
     posts_api_url: Url,
     pages_api_url: Url,
     key: String,
@@ -83,8 +83,8 @@ impl Blog for WordpressBlog<'_> {
         FeedData {
             id: self.feed_id.clone(),
             key: self.key.clone(),
-            title: self.api_json.name.clone(),
-            url: self.api_json.home.clone(),
+            title: self.meta.name.clone(),
+            url: self.meta.home.clone(),
         }
     }
 }
@@ -129,10 +129,7 @@ impl WordpressBlog<'_> {
                 self.get_page_once(&self.posts_api_url, self.api_page)
             })?;
             if self.api_page == 1 {
-                println!(
-                    r#"Scraping "{}" ({} posts)"#,
-                    &self.api_json.name, num_posts
-                );
+                println!(r#"Scraping "{}" ({} posts)"#, &self.meta.name, num_posts);
                 self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
             self.pending_entries.extend(
@@ -154,10 +151,7 @@ impl WordpressBlog<'_> {
                 self.get_page_once(&self.pages_api_url, self.api_page)
             })?;
             if self.api_page == 1 {
-                println!(
-                    r#"Scraping "{}" ({} pages)"#,
-                    &self.api_json.name, num_posts
-                );
+                println!(r#"Scraping "{}" ({} pages)"#, &self.meta.name, num_posts);
                 self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
             self.pending_entries.extend(
