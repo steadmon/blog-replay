@@ -91,6 +91,8 @@ fn generate_feed(
             }
         }
         feed.set_updated(Utc::now());
+        std::fs::create_dir_all(&config.feed_path)
+            .with_context(|| format!("Failed to create feed directory {}", config.feed_path))?;
         feed
             .write_to(
                 File::create(&feed_path)
