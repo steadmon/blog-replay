@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::*;
 
 // Parsed from Blogger API endpoint
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 struct BloggerJson {
     id: String,
     name: String,
@@ -18,6 +18,7 @@ struct BloggerJson {
 }
 
 // Can't combine this with the above BloggerJson struct because we can't deserialize reqwest::Url
+#[derive(Clone)]
 struct BloggerBlog<'a> {
     api_json: BloggerJson,
     posts_api_url: Url,
@@ -83,17 +84,6 @@ impl Blog for BloggerBlog<'_> {
             title: self.api_json.name.clone(),
             url: self.api_json.url.clone(),
         }
-    }
-
-    // TODO: delete after switching to Iterator
-    fn entries(&mut self) -> Result<Vec<Entry>> {
-        let mut posts: Vec<Entry> = Vec::new();
-
-        for post in self {
-            posts.push(post?);
-        }
-
-        Ok(posts)
     }
 }
 
@@ -234,7 +224,7 @@ impl BloggerBlog<'_> {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct ItemSummary {
     total_items: usize,

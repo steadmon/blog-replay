@@ -1,13 +1,13 @@
 use anyhow::Result;
 use atom_syndication::Entry;
+use dyn_clone::DynClone;
 use reqwest::blocking::Client;
 
 use super::atom::FeedData;
 use super::config::Config;
 
-pub trait Blog {
+pub trait Blog : DynClone + Iterator<Item = Result<Entry>> {
     fn feed_data(&self) -> FeedData;
-    fn entries(&mut self) -> Result<Vec<Entry>>;
 }
 
 pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result<Box<dyn Blog + 'a>> {

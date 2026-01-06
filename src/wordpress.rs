@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::common::*;
 
 // Parsed from Wordpress API endpoint
-#[derive(Deserialize, Debug)]
+#[derive(Clone, Deserialize, Debug)]
 struct WordpressJson {
     name: String,
     home: String,
@@ -58,6 +58,7 @@ fn get_users_once(client: &Client, url: &Url) -> anyhow::Result<HashMap<usize, S
     Ok(users.drain(..).map(|u| (u.id, u.name)).collect())
 }
 
+#[derive(Clone)]
 struct WordpressBlog<'a> {
     api_json: WordpressJson,
     posts_api_url: Url,
@@ -82,16 +83,6 @@ impl Blog for WordpressBlog<'_> {
             title: self.api_json.name.clone(),
             url: self.api_json.home.clone(),
         }
-    }
-
-    fn entries(&mut self) -> anyhow::Result<Vec<Entry>> {
-        let mut posts: Vec<Entry> = Vec::new();
-
-        for post in self {
-            posts.push(post?);
-        }
-
-        Ok(posts)
     }
 }
 

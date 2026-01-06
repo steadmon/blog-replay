@@ -1,12 +1,14 @@
 use std::collections::HashSet;
-use std::error::Error;
 use std::fs::{File, Permissions};
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
+use anyhow::{anyhow, Context, Result};
 use atom_syndication::{Entry, Generator};
 use chrono::Utc;
 use clap::clap_app;
+use sled::transaction::{Transactional, TransactionError};
+use sled::transaction::ConflictableTransactionError::Abort as SledTxAbort;
 
 mod blogger;
 mod common;
@@ -23,25 +25,41 @@ fn do_scrape(
     config: &Config,
     gen: &Generator,
     db_path: &Path,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let db = sled::open(db_path)?;
     let client = reqwest::blocking::ClientBuilder::new()
         .user_agent(USER_AGENT)
         .build()?;
 
-    let mut blog = common::get_blog(config, &client, url)?;
+    let blog = common::get_blog(config, &client, url)?;
     let feed_data = blog.feed_data();
-    let entries = blog.entries()?;
 
     let meta_tree = db.open_tree("feed_metadata")?;
-    meta_tree.insert(&feed_data.key, bincode::serialize(&feed_data)?)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
-    for entry in &entries {
-        entry_tree.insert(
-            entry.published.unwrap_or(entry.updated).to_rfc3339(),
-            bincode::serialize(&entry)?,
-        )?;
+
+    let tx_result = (&meta_tree, &entry_tree)
+        .transaction(|(meta_tree, entry_tree)| {
+            let serialized_feed_data = bincode::serialize(&feed_data)
+                .map_err(|e| SledTxAbort(e.into()))?;
+            meta_tree.insert(feed_data.key.as_str(), serialized_feed_data)?;
+            for entry in dyn_clone::clone_box(&*blog) {
+                let entry = entry.map_err(SledTxAbort)?;
+                let serialized_entry = bincode::serialize(&entry)
+                    .map_err(|e| SledTxAbort(e.into()))?;
+                entry_tree.insert(
+                    entry.published.unwrap_or(entry.updated).to_rfc3339().as_str(),
+                    serialized_entry,
+                )?;
+            }
+            Ok(())
+        });
+
+    match tx_result {
+        Ok(_) => {},
+        Err(TransactionError::Abort(e)) => return Err(e),
+        Err(e) => return Err(anyhow!(e)),
     }
+
     // Remove the corresponding generated feed if present, so that we don't duplicate entries.
     let _ = std::fs::remove_file(path_from_feed_data(config, &feed_data));
 
@@ -56,7 +74,7 @@ fn generate_feed(
     feed_data: &FeedData,
     gen: &Generator,
     db: &sled::Db,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let feed_path = path_from_feed_data(config, feed_data);
     let mut feed = read_or_create_feed(&feed_path, gen, feed_data)?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
@@ -73,14 +91,20 @@ fn generate_feed(
             }
         }
         feed.set_updated(Utc::now());
-        feed.write_to(File::create(&feed_path)?)?;
-        std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))?;
+        feed
+            .write_to(
+                File::create(&feed_path)
+                    .with_context(|| format!("Failed to create {}", feed_path.display()))?
+            )
+            .with_context(|| format!("Failed to write {}", feed_path.display()))?;
+        std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))
+            .with_context(|| format!("Failed to set permissions on {}", feed_path.display()))?;
     }
 
     Ok(())
 }
 
-fn do_generate(config: &Config, gen: &Generator, db_path: &Path) -> Result<(), Box<dyn Error>> {
+fn do_generate(config: &Config, gen: &Generator, db_path: &Path) -> Result<()> {
     let db = sled::open(db_path)?;
     let meta_tree = db.open_tree("feed_metadata")?;
     for (_, meta) in meta_tree.iter().flatten() {
@@ -91,7 +115,7 @@ fn do_generate(config: &Config, gen: &Generator, db_path: &Path) -> Result<(), B
     Ok(())
 }
 
-fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<(), Box<dyn Error>> {
+fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<()> {
     let db = sled::open(db_path)?;
     let meta_tree = db.open_tree("feed_metadata")?;
     for (key, meta) in meta_tree.iter().flatten() {
@@ -115,7 +139,7 @@ fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<(), Box<dy
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     let matches = clap_app!((PROG_NAME) =>
         (version: VERSION)
         (author: "Joshua Steadmon <josh@steadmon.net>")
@@ -138,7 +162,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let config: Config = confy::load(PROG_NAME)?;
     let proj_dirs =
-        directories::ProjectDirs::from("", "", PROG_NAME).ok_or("Can't determine project dirs")?;
+        directories::ProjectDirs::from("", "", PROG_NAME).ok_or(anyhow!("Can't determine project dirs"))?;
     let db_path = proj_dirs.data_dir().join("sled_db");
     let generator = Generator {
         value: String::from(PROG_NAME),
@@ -150,7 +174,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ("scrape", Some(sub_match)) => {
             let url_arg = sub_match.value_of("URL");
             do_scrape(
-                url_arg.ok_or("missing URL arg")?,
+                url_arg.ok_or(anyhow!("missing URL arg"))?,
                 &config,
                 &generator,
                 &db_path,
