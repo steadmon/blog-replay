@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 
 use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
@@ -49,7 +50,7 @@ pub fn get_blog<'a>(
         api_page: 1,
         posts_done: false,
         pages_done: false,
-        pending_entries: Vec::new(),
+        pending_entries: VecDeque::new(),
         pb: None,
     }))
 }
@@ -73,7 +74,7 @@ struct WordpressBlog<'a> {
     api_page: usize,
     posts_done: bool,
     pages_done: bool,
-    pending_entries: Vec<Entry>,
+    pending_entries: VecDeque<Entry>,
     pb: Option<indicatif::ProgressBar>,
 }
 
@@ -116,7 +117,7 @@ impl Iterator for WordpressBlog<'_> {
             pb.inc(1);
         }
 
-        self.pending_entries.pop().map(Ok)
+        self.pending_entries.pop_front().map(Ok)
     }
 }
 

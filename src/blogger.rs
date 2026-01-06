@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::blocking::Client;
@@ -29,7 +31,7 @@ struct BloggerBlog<'a> {
     posts_done: bool,
     pages_done: bool,
     next_page_token: Option<String>,
-    pending_entries: Vec<Entry>,
+    pending_entries: VecDeque<Entry>,
     config: &'a Config,
     client: &'a Client,
     pb: Option<indicatif::ProgressBar>,
@@ -73,7 +75,7 @@ pub fn get_blog<'a>(
         posts_done: false,
         pages_done: false,
         next_page_token: None,
-        pending_entries: Vec::new(),
+        pending_entries: VecDeque::new(),
         config,
         client,
         pb: None,
@@ -178,7 +180,7 @@ impl Iterator for BloggerBlog<'_> {
             pb.inc(1);
         }
 
-        self.pending_entries.pop().map(Ok)
+        self.pending_entries.pop_front().map(Ok)
     }
 }
 
