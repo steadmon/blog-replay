@@ -12,6 +12,7 @@ use sled::transaction::{TransactionError, Transactional};
 
 mod blogger;
 mod common;
+mod substack;
 mod wordpress;
 
 use common::*;

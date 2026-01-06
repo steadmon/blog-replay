@@ -17,5 +17,6 @@ pub fn get_blog<'a>(
 ) -> Result<Box<dyn Blog + 'a>> {
     crate::blogger::get_blog(config, client, url)
         .or_else(|_| crate::wordpress::get_blog(config, client, url))
+        .or_else(|_| crate::substack::get_blog(config, client, url))
         .or_else(|_| anyhow::bail!("Could not determine blog type"))
 }
