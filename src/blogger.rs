@@ -147,14 +147,17 @@ impl Iterator for BloggerBlog<'_> {
     type Item = Result<Entry>;
 
     fn next(&mut self) -> Option<Result<Entry>> {
-        if self.posts_done && self.pages_done {
+        if !self.pending_entries.is_empty() {
+            if let Some(pb) = &self.pb {
+                pb.inc(1);
+            }
+            self.pending_entries.pop_front().map(Ok)
+        } else if self.posts_done && self.pages_done {
             if let Some(pb) = &self.pb {
                 pb.finish();
             }
-            return None;
-        }
-
-        if self.pending_entries.is_empty() {
+            None
+        } else {
             if self.pb.is_none() {
                 println!(
                     r#"Scraping "{}" ({} posts, {} pages)"#,
@@ -172,15 +175,14 @@ impl Iterator for BloggerBlog<'_> {
             if let Err(e) = self.get_new_entries() {
                 self.posts_done = true;
                 self.pages_done = true;
-                return Some(Err(e));
+                Some(Err(e))
+            } else {
+                if let Some(pb) = &self.pb {
+                    pb.inc(1);
+                }
+                self.pending_entries.pop_front().map(Ok)
             }
         }
-
-        if let Some(pb) = &self.pb {
-            pb.inc(1);
-        }
-
-        self.pending_entries.pop_front().map(Ok)
     }
 }
 
