@@ -35,15 +35,19 @@ struct BloggerBlog<'a> {
     pb: Option<indicatif::ProgressBar>,
 }
 
-pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str) -> Result<Box<dyn Blog + 'a>> {
+pub fn get_blog<'a>(
+    config: &'a Config,
+    client: &'a Client,
+    url: &str,
+) -> Result<Box<dyn Blog + 'a>> {
     let api_url = Url::parse("https://www.googleapis.com/blogger/v3/blogs/byurl")?;
     let api_json: BloggerJson = retry_request(config, || {
         Ok(client
-               .get(api_url.clone())
-               .query(&[("url", url), ("key", &config.blogger_api_key)])
-               .send()?
-               .error_for_status()?
-               .json()?)
+            .get(api_url.clone())
+            .query(&[("url", url), ("key", &config.blogger_api_key)])
+            .send()?
+            .error_for_status()?
+            .json()?)
     })?;
 
     let posts_api_url = Url::parse(&format!(
@@ -105,7 +109,6 @@ impl BloggerBlog<'_> {
 
         Ok(resp.error_for_status()?.json()?)
     }
-
 }
 
 // We don't want this to be a BloggerBlog method, because we'll be modifying the pending_posts
@@ -158,7 +161,7 @@ impl Iterator for BloggerBlog<'_> {
                     self.api_json.pages.total_items
                 );
                 self.pb = Some(init_progress_bar(
-                    (self.api_json.posts.total_items + self.api_json.pages.total_items) as u64
+                    (self.api_json.posts.total_items + self.api_json.pages.total_items) as u64,
                 ));
             } else {
                 std::thread::sleep(std::time::Duration::from_secs(1));
@@ -188,7 +191,11 @@ impl BloggerBlog<'_> {
 
             self.seen_posts += post_resp.items.len();
             self.pending_entries.extend(
-                post_resp.items.iter().map(|p| post_to_entry(p, &self.feed_id)));
+                post_resp
+                    .items
+                    .iter()
+                    .map(|p| post_to_entry(p, &self.feed_id)),
+            );
 
             self.next_page_token = post_resp.next_page_token.take();
             if self.next_page_token.is_none() {
@@ -202,12 +209,15 @@ impl BloggerBlog<'_> {
                 }
             }
         } else if !self.pages_done && self.api_json.pages.total_items > 0 {
-            let page_resp = retry_request(self.config, || {
-                self.query_once(&self.pages_api_url, None)
-            })?;
+            let page_resp =
+                retry_request(self.config, || self.query_once(&self.pages_api_url, None))?;
 
             self.pending_entries.extend(
-                page_resp.items.iter().map(|p| post_to_entry(p, &self.feed_id)));
+                page_resp
+                    .items
+                    .iter()
+                    .map(|p| post_to_entry(p, &self.feed_id)),
+            );
 
             self.pages_done = true;
 

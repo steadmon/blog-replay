@@ -23,7 +23,8 @@ pub fn read_or_create_feed<P: AsRef<Path>>(
         Ok(f) => Ok(Feed::read_from(BufReader::new(f))?),
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(feed_from_metadata(gen, feed_data.clone())),
         Err(e) => Err(Box::new(e)),
-    }.with_context(|| format!("Failed to open feed at path {}", path.as_ref().display()))
+    }
+    .with_context(|| format!("Failed to open feed at path {}", path.as_ref().display()))
 }
 
 fn feed_from_metadata(gen: &Generator, feed_data: FeedData) -> Feed {

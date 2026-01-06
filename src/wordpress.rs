@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
-use reqwest::Url;
 use reqwest::blocking::Client;
+use reqwest::Url;
 use serde::Deserialize;
 
 use crate::common::*;
@@ -15,19 +15,21 @@ struct WordpressJson {
     home: String,
 }
 
-pub fn get_blog<'a>(config: &'a Config, client: &'a Client, url: &str)
-    -> anyhow::Result<Box<dyn Blog + 'a>>
-{
+pub fn get_blog<'a>(
+    config: &'a Config,
+    client: &'a Client,
+    url: &str,
+) -> anyhow::Result<Box<dyn Blog + 'a>> {
     // Technically we should use a HEAD request to discover[1] the API base (if it exists), but
     // this doesn't seem to be enabled on all sites.
     // [1]: https://developer.wordpress.org/rest-api/using-the-rest-api/discovery/#discovering-the-api
     let api_url = Url::parse(format!("{url}/wp-json/").as_str())?;
     let api_json: WordpressJson = retry_request(config, || {
         Ok(client
-                .get(api_url.clone())
-                .send()?
-                .error_for_status()?
-                .json()?)
+            .get(api_url.clone())
+            .send()?
+            .error_for_status()?
+            .json()?)
     })?;
 
     let key = sanitize_blog_key(&api_json.name);
@@ -125,10 +127,17 @@ impl WordpressBlog<'_> {
                 self.get_page_once(&self.posts_api_url, self.api_page)
             })?;
             if self.api_page == 1 {
-                println!(r#"Scraping "{}" ({} posts)"#, &self.api_json.name, num_posts);
+                println!(
+                    r#"Scraping "{}" ({} posts)"#,
+                    &self.api_json.name, num_posts
+                );
                 self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
-            self.pending_entries.extend(tmp_posts.iter().map(|p| post_to_entry(p, &self.feed_id, &self.authors)));
+            self.pending_entries.extend(
+                tmp_posts
+                    .iter()
+                    .map(|p| post_to_entry(p, &self.feed_id, &self.authors)),
+            );
             if self.api_page == num_api_pages {
                 self.posts_done = true;
                 if let Some(pb) = &self.pb {
@@ -143,10 +152,17 @@ impl WordpressBlog<'_> {
                 self.get_page_once(&self.pages_api_url, self.api_page)
             })?;
             if self.api_page == 1 {
-                println!(r#"Scraping "{}" ({} pages)"#, &self.api_json.name, num_posts);
+                println!(
+                    r#"Scraping "{}" ({} pages)"#,
+                    &self.api_json.name, num_posts
+                );
                 self.pb = Some(init_progress_bar(num_posts.try_into().unwrap()));
             }
-            self.pending_entries.extend(tmp_posts.iter().map(|p| post_to_entry(p, &self.feed_id, &self.authors)));
+            self.pending_entries.extend(
+                tmp_posts
+                    .iter()
+                    .map(|p| post_to_entry(p, &self.feed_id, &self.authors)),
+            );
             if self.api_page == num_api_pages {
                 self.pages_done = true;
                 if let Some(pb) = &self.pb {
@@ -161,10 +177,15 @@ impl WordpressBlog<'_> {
         Ok(())
     }
 
-    fn get_page_once(&self, api_url: &Url, page: usize)
-        -> anyhow::Result<(Vec<Post>, usize, usize)>
-    {
-        let req = self.client.get(api_url.clone()).query(&[("page", &format!("{page}"))]);
+    fn get_page_once(
+        &self,
+        api_url: &Url,
+        page: usize,
+    ) -> anyhow::Result<(Vec<Post>, usize, usize)> {
+        let req = self
+            .client
+            .get(api_url.clone())
+            .query(&[("page", &format!("{page}"))]);
         let resp = req.send()?.error_for_status()?;
 
         let items = resp

@@ -42,15 +42,15 @@ pub fn sanitize_blog_key(s: &str) -> String {
 
 pub fn retry_request<F, R>(config: &Config, mut action: F) -> anyhow::Result<R>
 where
-    F: FnMut() -> anyhow::Result<R>
+    F: FnMut() -> anyhow::Result<R>,
 {
     let base_backoff_millis = 500u64;
     let mut ret = Err(anyhow::anyhow!("max_retries must be greater than zero"));
 
-    for i in 0 .. config.max_retries {
+    for i in 0..config.max_retries {
         if i > 0 {
             std::thread::sleep(std::time::Duration::from_millis(
-                    base_backoff_millis.pow(i.try_into().unwrap())
+                base_backoff_millis.pow(i.try_into().unwrap()),
             ));
         }
         ret = action();

@@ -7,8 +7,8 @@ use anyhow::{anyhow, Context, Result};
 use atom_syndication::{Entry, Generator};
 use chrono::Utc;
 use clap::clap_app;
-use sled::transaction::{Transactional, TransactionError};
 use sled::transaction::ConflictableTransactionError::Abort as SledTxAbort;
+use sled::transaction::{TransactionError, Transactional};
 
 mod blogger;
 mod common;
@@ -20,12 +20,7 @@ static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 static VERSION: &str = env!("CARGO_PKG_VERSION");
 static USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
-fn do_scrape(
-    url: &str,
-    config: &Config,
-    gen: &Generator,
-    db_path: &Path,
-) -> Result<()> {
+fn do_scrape(url: &str, config: &Config, gen: &Generator, db_path: &Path) -> Result<()> {
     let db = sled::open(db_path)?;
     let client = reqwest::blocking::ClientBuilder::new()
         .user_agent(USER_AGENT)
@@ -37,25 +32,27 @@ fn do_scrape(
     let meta_tree = db.open_tree("feed_metadata")?;
     let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
 
-    let tx_result = (&meta_tree, &entry_tree)
-        .transaction(|(meta_tree, entry_tree)| {
-            let serialized_feed_data = bincode::serialize(&feed_data)
-                .map_err(|e| SledTxAbort(e.into()))?;
-            meta_tree.insert(feed_data.key.as_str(), serialized_feed_data)?;
-            for entry in dyn_clone::clone_box(&*blog) {
-                let entry = entry.map_err(SledTxAbort)?;
-                let serialized_entry = bincode::serialize(&entry)
-                    .map_err(|e| SledTxAbort(e.into()))?;
-                entry_tree.insert(
-                    entry.published.unwrap_or(entry.updated).to_rfc3339().as_str(),
-                    serialized_entry,
-                )?;
-            }
-            Ok(())
-        });
+    let tx_result = (&meta_tree, &entry_tree).transaction(|(meta_tree, entry_tree)| {
+        let serialized_feed_data =
+            bincode::serialize(&feed_data).map_err(|e| SledTxAbort(e.into()))?;
+        meta_tree.insert(feed_data.key.as_str(), serialized_feed_data)?;
+        for entry in dyn_clone::clone_box(&*blog) {
+            let entry = entry.map_err(SledTxAbort)?;
+            let serialized_entry = bincode::serialize(&entry).map_err(|e| SledTxAbort(e.into()))?;
+            entry_tree.insert(
+                entry
+                    .published
+                    .unwrap_or(entry.updated)
+                    .to_rfc3339()
+                    .as_str(),
+                serialized_entry,
+            )?;
+        }
+        Ok(())
+    });
 
     match tx_result {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(TransactionError::Abort(e)) => return Err(e),
         Err(e) => return Err(anyhow!(e)),
     }
@@ -93,12 +90,11 @@ fn generate_feed(
         feed.set_updated(Utc::now());
         std::fs::create_dir_all(&config.feed_path)
             .with_context(|| format!("Failed to create feed directory {}", config.feed_path))?;
-        feed
-            .write_to(
-                File::create(&feed_path)
-                    .with_context(|| format!("Failed to create {}", feed_path.display()))?
-            )
-            .with_context(|| format!("Failed to write {}", feed_path.display()))?;
+        feed.write_to(
+            File::create(&feed_path)
+                .with_context(|| format!("Failed to create {}", feed_path.display()))?,
+        )
+        .with_context(|| format!("Failed to write {}", feed_path.display()))?;
         std::fs::set_permissions(&feed_path, Permissions::from_mode(0o644))
             .with_context(|| format!("Failed to set permissions on {}", feed_path.display()))?;
     }
@@ -122,14 +118,19 @@ fn do_ls(db_path: &Path, long: bool, blogs: &HashSet<&str>) -> Result<()> {
     let meta_tree = db.open_tree("feed_metadata")?;
     for (key, meta) in meta_tree.iter().flatten() {
         let key = String::from_utf8(key.to_vec())?;
-        if ! blogs.is_empty() && ! blogs.contains(key.as_str()) {
+        if !blogs.is_empty() && !blogs.contains(key.as_str()) {
             continue;
         }
         let feed_data: FeedData = bincode::deserialize(&meta)?;
         let entry_tree = db.open_tree(format!("entries_{}", feed_data.key))?;
         if long {
-            println!("{} \"{}\" ({}): {} posts",
-                feed_data.key, feed_data.title, feed_data.id, entry_tree.len());
+            println!(
+                "{} \"{}\" ({}): {} posts",
+                feed_data.key,
+                feed_data.title,
+                feed_data.id,
+                entry_tree.len()
+            );
             for (_, val) in entry_tree.iter().flatten() {
                 let entry: Entry = bincode::deserialize(&val)?;
                 println!("   {}", entry.title.value);
@@ -163,8 +164,8 @@ fn main() -> Result<()> {
     .get_matches();
 
     let config: Config = confy::load(PROG_NAME)?;
-    let proj_dirs =
-        directories::ProjectDirs::from("", "", PROG_NAME).ok_or(anyhow!("Can't determine project dirs"))?;
+    let proj_dirs = directories::ProjectDirs::from("", "", PROG_NAME)
+        .ok_or(anyhow!("Can't determine project dirs"))?;
     let db_path = proj_dirs.data_dir().join("sled_db");
     let generator = Generator {
         value: String::from(PROG_NAME),
@@ -184,7 +185,8 @@ fn main() -> Result<()> {
         }
         ("generate", Some(_)) => do_generate(&config, &generator, &db_path),
         ("ls", Some(sub_match)) => {
-            let blogs = sub_match.values_of("BLOGS")
+            let blogs = sub_match
+                .values_of("BLOGS")
                 .map_or_else(HashSet::new, |b| b.collect());
             do_ls(&db_path, sub_match.is_present("LONG"), &blogs)
         }
