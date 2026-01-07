@@ -16,7 +16,7 @@ This is a learning project. It has missing functionality. There are probably som
 
 ### Configuration
 
-Currently, `blog-replay` can only scrape Blogger and WordPress blogs. To interact with Blogger's API, a Google API key is necessary. See [Creating an API key](https://cloud.google.com/docs/authentication/api-keys#creating_an_api_key) from Google Cloud's documentation. Once you've created the key, you can store the key in `blog-replay`'s config file, located at `~/.config/blog-replay/blog-replay.toml`. For example:
+Currently, `blog-replay` can scrape Blogger, Substack, and WordPress blogs. To interact with Blogger's API, a Google API key is necessary. See [Creating an API key](https://cloud.google.com/docs/authentication/api-keys#creating_an_api_key) from Google Cloud's documentation. Once you've created the key, you can store the key in `blog-replay`'s config file, located at `~/.config/blog-replay/blog-replay.toml`. For example:
 
 ```
 blogger_api_key = 'SOME_API_KEY_STRING'
