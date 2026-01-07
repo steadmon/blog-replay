@@ -75,7 +75,8 @@ pub fn init_progress_bar(len: u64) -> indicatif::ProgressBar {
             [elapsed: {elapsed_precise}, eta: {eta_precise}]",
             )
             .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏ ")
-            .progress_chars("█▉▊▋▌▍▎▏  "),
+            .progress_chars("█▉▊▋▌▍▎▏  ")
+            .on_finish(indicatif::ProgressFinish::AndLeave),
     );
     pb.enable_steady_tick(100);
     pb
