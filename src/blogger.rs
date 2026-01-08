@@ -4,16 +4,15 @@ use anyhow::Result;
 use atom_syndication::{ContentBuilder, Entry, EntryBuilder, LinkBuilder, Person};
 use reqwest::blocking::Client;
 use reqwest::Url;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::common::*;
 
 // Parsed from Blogger API endpoint
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 struct BloggerMeta {
     id: String,
     name: String,
-    description: String,
     url: String,
     posts: ItemSummary,
     pages: ItemSummary,
@@ -220,20 +219,20 @@ impl Iterator for InternalIter<'_> {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ItemSummary {
     total_items: usize,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Author {
     display_name: String,
     url: String,
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 struct Post {
     id: String,
     url: String,
@@ -243,7 +242,7 @@ struct Post {
     published: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ListPostsResponse {
     next_page_token: Option<String>,

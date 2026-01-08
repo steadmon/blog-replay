@@ -10,7 +10,7 @@ use serde::Deserialize;
 use crate::common::*;
 
 // Parsed from Wordpress API endpoint
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 struct WordpressMeta {
     name: String,
     home: String,
@@ -206,18 +206,18 @@ impl Iterator for InternalIter<'_> {
     }
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 struct Content {
     rendered: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize)]
 struct User {
     id: usize,
     name: String,
 }
 
-#[derive(Clone, Deserialize, Debug)]
+#[derive(Clone, Deserialize)]
 struct Post {
     id: usize,
     date_gmt: String,
