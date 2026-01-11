@@ -2,7 +2,7 @@
   description = "A utility to replay a blog's archive into an Atom feed";
   inputs = {
     rust-overlay.url = "github:oxalica/rust-overlay";
-    flake-utils.follows = "rust-overlay/flake-utils";
+    flake-utils.url = "github:numtide/flake-utils";
     nixpkgs.follows = "rust-overlay/nixpkgs";
     naersk.url = "github:nix-community/naersk";
     naersk.inputs.nixpkgs.follows = "rust-overlay/nixpkgs";
