@@ -147,11 +147,13 @@ impl<'a> InternalIter<'a> {
             url,
             num_expected,
             num_seen: 0,
-            done: false,
+            done: num_expected == 0,
             pending: VecDeque::new(),
             next_page_token: None,
         };
-        this.fetch_entries()?;
+        if !this.done {
+            this.fetch_entries()?;
+        }
         Ok(this)
     }
 
